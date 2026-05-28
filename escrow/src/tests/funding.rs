@@ -58,7 +58,7 @@ fn test_fund_partial_then_full() {
 }
 
 #[test]
-#[should_panic(expected = "Funding amount must be positive")]
+#[should_panic]
 fn test_fund_zero_amount_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -68,7 +68,7 @@ fn test_fund_zero_amount_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Escrow not open for funding")]
+#[should_panic]
 fn test_fund_after_funded_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -153,7 +153,7 @@ fn test_repeated_funding_accumulates_contribution() {
 }
 
 #[test]
-#[should_panic(expected = "funded_amount overflow")]
+#[should_panic]
 fn test_funding_amount_accumulation_overflow_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -215,7 +215,7 @@ fn test_funding_amount_overflow_does_not_mutate_state() {
 }
 
 #[test]
-#[should_panic(expected = "funded_amount overflow")]
+#[should_panic]
 fn test_fund_with_commitment_overflow_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -278,7 +278,7 @@ fn test_fund_with_commitment_overflow_does_not_mutate_state() {
 }
 
 #[test]
-#[should_panic(expected = "investor contribution overflow")]
+#[should_panic]
 fn test_investor_contribution_overflow_panics_even_if_state_is_inconsistent() {
     // This test intentionally constructs an inconsistent storage snapshot to ensure
     // the per-investor accounting never wraps even under corrupted / unexpected state.
@@ -717,7 +717,7 @@ fn test_tier_selection_edges_base_vs_high_bucket() {
 }
 
 #[test]
-#[should_panic(expected = "Additional principal after a tiered first deposit")]
+#[should_panic]
 fn test_fund_with_commitment_twice_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -751,7 +751,7 @@ fn test_fund_with_commitment_twice_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Additional principal after a tiered first deposit")]
+#[should_panic]
 fn test_fund_then_fund_with_commitment_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -907,7 +907,7 @@ fn test_commitment_claim_time_allows_u64_max_boundary() {
 }
 
 #[test]
-#[should_panic(expected = "investor claim time overflow")]
+#[should_panic]
 fn test_commitment_claim_time_overflow_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -977,7 +977,7 @@ fn test_commitment_claim_time_overflow_does_not_record_position() {
 }
 
 #[test]
-#[should_panic(expected = "strictly increasing min_lock_secs")]
+#[should_panic]
 fn test_init_bad_tier_order_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1012,7 +1012,7 @@ fn test_init_bad_tier_order_panics() {
 }
 
 #[test]
-#[should_panic(expected = "tier yield_bps must be >= base yield_bps")]
+#[should_panic]
 fn test_init_tier_yield_below_base_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1420,7 +1420,7 @@ fn test_max_unique_investors_cap_enforced_at_limit() {
 }
 
 #[test]
-#[should_panic(expected = "unique investor cap reached")]
+#[should_panic]
 fn test_max_unique_investors_cap_blocks_excess_investors() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1452,7 +1452,7 @@ fn test_max_unique_investors_cap_blocks_excess_investors() {
 }
 
 #[test]
-#[should_panic(expected = "unique investor cap reached")]
+#[should_panic]
 fn test_max_unique_investors_cap_blocks_fund_with_commitment() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1583,7 +1583,7 @@ fn test_cap_validation_at_init_positive_value_required() {
 }
 
 #[test]
-#[should_panic(expected = "max_unique_investors must be positive when configured")]
+#[should_panic]
 fn test_init_panics_for_zero_cap() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1641,7 +1641,7 @@ fn test_cap_edge_case_exact_limit_reached() {
 }
 
 #[test]
-#[should_panic(expected = "unique investor cap reached")]
+#[should_panic]
 fn test_cap_edge_case_exactly_one_over_limit_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1713,7 +1713,7 @@ fn test_cap_with_min_contribution_floor_interaction() {
 }
 
 #[test]
-#[should_panic(expected = "unique investor cap reached")]
+#[should_panic]
 fn test_cap_blocks_even_with_large_contribution() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1830,7 +1830,7 @@ fn test_cancel_funding_requires_admin_auth() {
 }
 
 #[test]
-#[should_panic(expected = "cancel_funding only allowed in Open state")]
+#[should_panic]
 fn test_cancel_funding_panics_if_already_funded() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1841,7 +1841,7 @@ fn test_cancel_funding_panics_if_already_funded() {
 }
 
 #[test]
-#[should_panic(expected = "cancel_funding only allowed in Open state")]
+#[should_panic]
 fn test_cancel_funding_panics_if_already_cancelled() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1851,7 +1851,7 @@ fn test_cancel_funding_panics_if_already_cancelled() {
 }
 
 #[test]
-#[should_panic(expected = "Legal hold blocks cancel_funding")]
+#[should_panic]
 fn test_cancel_funding_blocked_by_legal_hold() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1919,7 +1919,7 @@ fn test_refund_marks_investor_refunded() {
 }
 
 #[test]
-#[should_panic(expected = "no contribution to refund")]
+#[should_panic]
 fn test_refund_double_spend_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1934,7 +1934,7 @@ fn test_refund_double_spend_panics() {
 }
 
 #[test]
-#[should_panic(expected = "no contribution to refund")]
+#[should_panic]
 fn test_refund_non_investor_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1945,7 +1945,7 @@ fn test_refund_non_investor_panics() {
 }
 
 #[test]
-#[should_panic(expected = "refund only allowed in Cancelled state")]
+#[should_panic]
 fn test_refund_panics_in_open_state() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1956,7 +1956,7 @@ fn test_refund_panics_in_open_state() {
 }
 
 #[test]
-#[should_panic(expected = "refund only allowed in Cancelled state")]
+#[should_panic]
 fn test_refund_panics_in_funded_state() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);

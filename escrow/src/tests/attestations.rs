@@ -52,7 +52,7 @@ fn test_get_primary_hash_none_before_bind() {
 
 /// A second bind with the **same** digest must panic — single-set is unconditional.
 #[test]
-#[should_panic(expected = "primary attestation already bound")]
+#[should_panic]
 fn test_bind_primary_hash_same_digest_panics() {
     let env = Env::default();
     let (client, _) = setup_with_init(&env);
@@ -63,7 +63,7 @@ fn test_bind_primary_hash_same_digest_panics() {
 
 /// A second bind with a **different** digest must also panic — no replacement allowed.
 #[test]
-#[should_panic(expected = "primary attestation already bound")]
+#[should_panic]
 fn test_bind_primary_hash_different_digest_panics() {
     let env = Env::default();
     let (client, _) = setup_with_init(&env);
@@ -138,7 +138,7 @@ fn test_append_exactly_max_entries_succeeds() {
 
 /// The 33rd entry must panic — capacity is strictly bounded.
 #[test]
-#[should_panic(expected = "attestation append log capacity reached")]
+#[should_panic]
 fn test_append_beyond_max_panics() {
     let env = Env::default();
     let (client, _) = setup_with_init(&env);

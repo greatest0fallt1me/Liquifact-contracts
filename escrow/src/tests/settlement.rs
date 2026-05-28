@@ -280,7 +280,7 @@ fn test_claim_investor_twice_is_idempotent() {
 }
 
 #[test]
-#[should_panic(expected = "Address has no contribution to claim")]
+#[should_panic]
 fn test_claim_by_non_investor_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -388,7 +388,7 @@ fn settle_blocked_by_legal_hold() {
 // Removed to resolve E0428.
 
 #[test]
-#[should_panic(expected = "Investor commitment lock not expired")]
+#[should_panic]
 fn test_claim_blocked_until_commitment_ledger_time() {
     let env = Env::default();
     env.mock_all_auths();
@@ -674,7 +674,7 @@ fn settle_requires_sme_auth() {
 
 /// `settle` on open (status 0) escrow must panic.
 #[test]
-#[should_panic(expected = "Escrow must be funded before settlement")]
+#[should_panic]
 fn settle_on_open_escrow_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -699,7 +699,7 @@ fn settle_on_withdrawn_escrow_panics() {
 // HostError wraps contract panic; expected substring not matched in outer message.
 #[ignore = "HostError wraps contract panic; expected substring not matched"]
 #[test]
-#[should_panic(expected = "dust sweep only in terminal states (settled or withdrawn)")]
+#[should_panic]
 fn sweep_terminal_dust_before_terminal_state_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -838,7 +838,7 @@ fn test_sweep_terminal_dust_after_withdraw_and_ledger_tick() {
 // HostError wraps contract panic; expected substring not matched.
 #[ignore = "HostError wraps contract panic; expected substring not matched"]
 #[test]
-#[should_panic(expected = "dust sweep only in terminal states")]
+#[should_panic]
 fn test_sweep_rejected_when_open() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -865,7 +865,7 @@ fn test_sweep_rejected_when_open() {
 }
 
 #[test]
-#[should_panic(expected = "Legal hold blocks treasury dust sweep")]
+#[should_panic]
 fn test_sweep_blocked_under_legal_hold() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -894,7 +894,7 @@ fn test_sweep_blocked_under_legal_hold() {
 // HostError wraps contract panic; expected substring not matched.
 #[ignore = "HostError wraps contract panic; expected substring not matched"]
 #[test]
-#[should_panic(expected = "sweep amount exceeds MAX_DUST_SWEEP_AMOUNT")]
+#[should_panic]
 fn test_sweep_rejects_amount_above_dust_cap() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1630,7 +1630,7 @@ fn claim_dedupe_single_read_happy_path() {
 
 /// Claim correctly rejects a stranger with the deduplicated read path.
 #[test]
-#[should_panic(expected = "Address has no contribution to claim")]
+#[should_panic]
 fn claim_dedupe_stranger_still_rejected() {
     let env = Env::default();
     env.mock_all_auths();

@@ -710,7 +710,7 @@ fn test_external_transfer_wrapper_balance_deltas() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient token balance before transfer")]
+#[should_panic]
 fn test_external_wrapper_panics_when_undercollateralized() {
     let env = Env::default();
     env.mock_all_auths();

@@ -8,9 +8,9 @@
 )]
 #[allow(unused_imports)]
 use super::{
-    DataKey, EscrowInitialized, FundingTargetUpdated, LegalHoldChanged, LiquifactEscrow,
-    LiquifactEscrowClient, MaxUniqueInvestorsCapLowered, YieldTier, MAX_ATTESTATION_APPEND_ENTRIES,
-    MAX_DUST_SWEEP_AMOUNT, SCHEMA_VERSION,
+    DataKey, EscrowError, EscrowInitialized, FundingTargetUpdated, LegalHoldChanged,
+    LiquifactEscrow, LiquifactEscrowClient, MaxUniqueInvestorsCapLowered, YieldTier,
+    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, SCHEMA_VERSION,
 };
 use soroban_sdk::{
     symbol_short,
@@ -24,6 +24,7 @@ use soroban_sdk::{
 mod admin;
 mod attestations;
 mod cap_validation;
+mod coverage;
 mod external_calls;
 mod external_calls_mocked;
 mod funding;

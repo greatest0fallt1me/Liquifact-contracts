@@ -1,83 +1,117 @@
-# Liquifact Escrow Error Messages
+# Liquifact Escrow Typed Error Codes
 
-This document catalogs the panic messages emitted by the Liquifact Escrow contract. These messages are intended for developers and SDK authors to help diagnose transaction failures.
+LiquiFact escrow emits typed Soroban contract errors through `EscrowError`. Clients should branch
+on the numeric `ContractError(code)` value, not on panic strings or diagnostic text.
 
-> [!IMPORTANT]
-> In Soroban, contract panics abort the entire transaction. The string messages provided in `assert!` and `panic!` calls are visible in transaction simulation and diagnostic events.
+## Stability Policy
 
-## 📋 Message Catalog
+Error codes are append-only. Once a code is assigned, it must not be renamed for a different
+meaning, reused, or renumbered. New failures must receive new codes after the existing range.
 
-### Initialization (`init`)
-| Message | Rationale |
-|---------|-----------|
-| `Amount must be positive` | The base invoice amount must be > 0. |
-| `yield_bps must be between 0 and 10_000` | Yield must be in the range 0% - 100%. |
-| `Escrow already initialized` | `init` was called on a contract instance that already has state. |
-| `min_contribution must be positive when configured` | If a floor is set, it must be > 0. |
-| `min_contribution cannot exceed initial invoice amount` | The floor cannot be higher than the target. |
-| `max_unique_investors must be positive when configured` | If an investor cap is set, it must be > 0. |
-| `invoice_id length must be 1..=32` | The invoice string identifier is too long or empty. |
-| `invoice_id must be [A-Za-z0-9_] only` | The identifier contains invalid characters for a Soroban Symbol. |
+Legacy panic messages are listed only to help integrators migrate old simulations and logs.
 
-### Funding (`fund` / `fund_with_commitment`)
-| Message | Rationale |
-|---------|-----------|
-| `Funding amount must be positive` | Investors cannot deposit 0 or negative amounts. |
-| `funding amount below min_contribution floor` | The deposit does not meet the minimum required amount. |
-| `Legal hold blocks new funding while active` | The admin has frozen the escrow for compliance reasons. |
-| `Escrow not open for funding` | The escrow is already funded, settled, or withdrawn. |
-| `Investor not on allowlist` | The allowlist is active and the caller is not permitted to fund. |
-| `unique investor cap reached` | The maximum number of distinct investor addresses has been reached. |
-| `Additional principal after a tiered first deposit must use fund()` | Once a tier is selected via commitment, subsequent deposits must use the simple `fund` method. |
+## Canonical Code Table
 
-### Settlement & Withdrawal
-| Message | Rationale |
-|---------|-----------|
-| `Legal hold blocks settlement finalization` | Settlement cannot proceed during a compliance hold. |
-| `Escrow must be funded before settlement` | Cannot settle an invoice that hasn't met its funding target. |
-| `Escrow has not yet reached maturity` | The ledger timestamp is earlier than the configured `maturity`. |
-| `Legal hold blocks SME withdrawal` | SME cannot pull funds during a compliance hold. |
-| `Escrow must be funded before withdrawal` | SME can only withdraw funds after the status is `Funded`. |
+| Code | Variant | Legacy failure |
+| ---: | --- | --- |
+| 1 | `AmountMustBePositive` | `Amount must be positive` |
+| 2 | `YieldBpsOutOfRange` | `yield_bps must be between 0 and 10_000` |
+| 3 | `EscrowAlreadyInitialized` | `Escrow already initialized` |
+| 4 | `InvoiceIdInvalidLength` | `invoice_id length must be 1..=MAX_INVOICE_ID_STRING_LEN` |
+| 5 | `InvoiceIdInvalidCharset` | `invoice_id must be [A-Za-z0-9_] only` |
+| 6 | `MinContributionNotPositive` | `min_contribution must be positive when configured` |
+| 7 | `MinContributionExceedsAmount` | `min_contribution cannot exceed initial invoice amount / target hint` |
+| 8 | `MaxUniqueInvestorsNotPositive` | `max_unique_investors must be positive when configured` |
+| 9 | `MaxPerInvestorNotPositive` | `max_per_investor must be positive when configured` |
+| 10 | `TierYieldOutOfRange` | `tier yield_bps must be 0..=10_000` |
+| 11 | `TierYieldBelowBase` | `tier yield_bps must be >= base yield_bps` |
+| 12 | `TierLockNotIncreasing` | `tiers must have strictly increasing min_lock_secs` |
+| 13 | `TierYieldNotNonDecreasing` | `tiers must have non-decreasing yield_bps` |
+| 20 | `EscrowNotInitialized` | `Escrow not initialized` |
+| 21 | `FundingTokenNotSet` | `Funding token not set` |
+| 22 | `TreasuryNotSet` | `Treasury not set` |
+| 30 | `LegalHoldBlocksTreasuryDustSweep` | `Legal hold blocks treasury dust sweep` |
+| 31 | `SweepAmountNotPositive` | `sweep amount must be positive` |
+| 32 | `SweepAmountExceedsMax` | `sweep amount exceeds MAX_DUST_SWEEP_AMOUNT` |
+| 33 | `DustSweepNotTerminal` | `dust sweep only in terminal states` |
+| 34 | `NoFundingTokenBalanceToSweep` | `no funding token balance to sweep` |
+| 35 | `EffectiveSweepAmountZero` | `effective sweep amount is zero` |
+| 36 | `TransferAmountNotPositive` | `transfer amount must be positive` |
+| 37 | `InsufficientTokenBalanceBeforeTransfer` | `insufficient token balance before transfer` |
+| 38 | `SenderBalanceUnderflow` | `balance underflow on sender` |
+| 39 | `RecipientBalanceUnderflow` | `balance underflow on recipient` |
+| 40 | `SenderBalanceDeltaMismatch` | `sender balance delta must equal transfer amount` |
+| 41 | `RecipientBalanceDeltaMismatch` | `recipient balance delta must equal transfer amount` |
+| 50 | `PrimaryAttestationAlreadyBound` | `primary attestation already bound` |
+| 51 | `AttestationAppendLogCapacityReached` | `attestation append log capacity reached` |
+| 60 | `CollateralAmountNotPositive` | `Collateral amount must be positive` |
+| 61 | `CollateralAssetEmpty` | `Collateral asset symbol must not be empty` |
+| 62 | `CollateralTimestampBackwards` | `Collateral commitment timestamp must not go backward` |
+| 70 | `InvestorBatchEmpty` | `investors vector must be non-empty` |
+| 71 | `InvestorBatchTooLarge` | `investors vector length exceeds MAX_INVESTOR_ALLOWLIST_BATCH` |
+| 72 | `TargetNotPositive` | `Target must be strictly positive` |
+| 73 | `TargetUpdateNotOpen` | `Target can only be updated in Open state` |
+| 74 | `TargetBelowFundedAmount` | `Target cannot be less than already funded amount` |
+| 75 | `CapLowerNotOpen` | `Cap can only be lowered in Open state` |
+| 76 | `NoInvestorCapConfigured` | `no investor cap configured` |
+| 77 | `NewCapNotLower` | `new cap must be strictly lower than current cap` |
+| 78 | `NewCapBelowCurrentFunderCount` | `new cap cannot be below current unique funder count` |
+| 79 | `MaturityUpdateNotOpen` | `Maturity can only be updated in Open state` |
+| 80 | `NewAdminSameAsCurrent` | `New admin must differ from current admin` |
+| 90 | `MigrationVersionMismatch` | `from_version does not match stored version` |
+| 91 | `AlreadyCurrentSchemaVersion` | `Already at current schema version` |
+| 92 | `NoMigrationPath` | `No migration path from version 0 - extend migrate or redeploy` |
+| 100 | `FundingAmountNotPositive` | `Funding amount must be positive` |
+| 101 | `FundingBelowMinContribution` | `funding amount below min_contribution floor` |
+| 102 | `LegalHoldBlocksFunding` | `Legal hold blocks new funding while active` |
+| 103 | `EscrowNotOpenForFunding` | `Escrow not open for funding` |
+| 104 | `InvestorNotAllowlisted` | `Investor not on allowlist` |
+| 105 | `InvestorContributionOverflow` | `investor contribution overflow` |
+| 106 | `InvestorContributionExceedsCap` | `investor contribution exceeds max_per_investor cap` |
+| 107 | `UniqueInvestorCapReached` | `unique investor cap reached` |
+| 108 | `TieredSecondDeposit` | `Additional principal after a tiered first deposit must use fund()` |
+| 109 | `InvestorClaimTimeOverflow` | `investor claim time overflow` |
+| 110 | `FundedAmountOverflow` | `funded_amount overflow` |
+| 120 | `LegalHoldBlocksSettlement` | `Legal hold blocks settlement finalization` |
+| 121 | `SettlementNotFunded` | `Escrow must be funded before settlement` |
+| 122 | `MaturityNotReached` | `Escrow has not yet reached maturity` |
+| 123 | `LegalHoldBlocksWithdrawal` | `Legal hold blocks SME withdrawal` |
+| 124 | `WithdrawalNotFunded` | `Escrow must be funded before withdrawal` |
+| 125 | `LegalHoldBlocksInvestorClaims` | `Legal hold blocks investor claims` |
+| 126 | `NoContributionToClaim` | `Address has no contribution to claim` |
+| 127 | `InvestorClaimNotSettled` | `Escrow must be settled before investor claim` |
+| 128 | `InvestorCommitmentLockNotExpired` | `Investor commitment lock not expired` |
+| 129 | `ComputePayoutArithmeticOverflow` | `compute_investor_payout: arithmetic overflow` |
+| 140 | `LegalHoldBlocksCancelFunding` | `Legal hold blocks cancel_funding` |
+| 141 | `CancelFundingNotOpen` | `cancel_funding only allowed in Open state` |
+| 142 | `RefundNotCancelled` | `refund only allowed in Cancelled state` |
+| 143 | `NoContributionToRefund` | `no contribution to refund` |
 
-### Payout Claims (`claim_investor_payout`)
-| Message | Rationale |
-|---------|-----------|
-| `Legal hold blocks investor claims` | Payouts are frozen during a compliance hold. |
-| `Address has no contribution to claim` | The caller never participated in this escrow. |
-| `Escrow must be settled before investor claim` | Payouts only happen after the `Settled` state is reached. |
-| `Investor commitment lock not expired` | The investor's specific lock period (from tiered yield) has not elapsed. |
+## Client Guidance
 
-### Administrative & Compliance
-| Message | Rationale |
-|---------|-----------|
-| `Target must be strictly positive` | Funding target update must be > 0. |
-| `Target can only be updated in Open state` | Cannot change the target once funding has completed. |
-| `Target cannot be less than already funded amount` | Cannot lower the target below what has already been committed. |
-| `primary attestation already bound` | The primary audit hash is immutable once set. |
-| `attestation append log capacity reached` | The append-only log has reached its limit (32 entries). |
-| `New admin must differ from current admin` | Transferring admin to the same address is rejected. |
+In tests and SDK simulations, `try_*` clients surface typed traps as contract errors. For example,
+`FundingAmountNotPositive` is observable as `ContractError(100)` / `Error(Contract, #100)`.
 
-### Token & External Calls
-| Message | Rationale |
-|---------|-----------|
-| `insufficient token balance before transfer` | The contract does not have enough tokens to perform the transfer. |
-| `sender balance delta must equal transfer amount` | Detected a fee-on-transfer or non-compliant token. |
-| `recipient balance delta must equal transfer amount` | Detected a malicious or non-compliant token. |
+Recommended SDK mappings:
 
----
+| Codes | Suggested client category |
+| --- | --- |
+| 1-13 | Invalid initialization or pricing configuration |
+| 20-22 | Missing initialized escrow metadata |
+| 30-41 | Dust sweep or token integration failure |
+| 50-62 | Attestation or collateral metadata failure |
+| 70-80 | Administrative validation failure |
+| 90-92 | Migration failure |
+| 100-110 | Funding failure |
+| 120-129 | Settlement, withdrawal, or investor payout failure |
+| 140-143 | Cancellation or refund failure |
 
-## 🛠️ Guidance for SDK Authors
+## Security Notes
 
-### Error Mapping
-SDKs should catch these strings from the `diagnostic_events` or the `error` field of the transaction simulation. It is recommended to map common failures to user-friendly enums:
-
-- `Legal hold active` -> `Error::ComplianceHold`
-- `Escrow not open` -> `Error::InvalidState`
-- `amount below floor` -> `Error::InsufficientAmount`
-
-### Stability Policy
-Panic messages marked with a 📋 in this catalog are considered part of the **Integration Contract**. While logic may evolve, these strings will remain stable within the same major schema version to avoid breaking off-chain error handlers.
-
-### Recovery Suggestions
-- **Legal Hold**: Direct the user to contact the platform admin or check the `LegalHoldChanged` event history.
-- **Maturity**: Verify the `maturity` field from `get_escrow` against the current ledger time before submitting a `settle` transaction.
+- Auth boundaries from ADR-002 remain unchanged. Typed errors do not replace `require_auth`.
+- Overflow-sensitive paths use checked arithmetic and map each overflow to a stable code.
+- Dust sweep and refund transfers keep balance-delta checks at the external token boundary.
+- Refund uses checks-effects-interactions by zeroing contribution before transfer to prevent
+  double-spend. Investor payout remains idempotent after the claim marker is written.
+- Storage TTL behavior is unchanged by the error migration; `bump_ttl` still extends contract
+  instance storage and persistent allowlist entries.

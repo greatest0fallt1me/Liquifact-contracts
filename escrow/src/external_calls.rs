@@ -66,6 +66,7 @@
 //! Security takeaway: this is not relying on "non-reentrancy" as a magic property. It enforces
 //! post-call accounting invariants at the external-call boundary where token behavior is observed.
 
+use crate::{ensure, fail, EscrowError};
 use soroban_sdk::{token::TokenClient, Address, Env, MuxedAddress};
 
 /// Transfer `amount` of `token_addr` from `from` (typically this escrow contract) to `treasury`,
@@ -91,20 +92,17 @@ use soroban_sdk::{token::TokenClient, Address, Env, MuxedAddress};
 /// * `treasury` - Address receiving the tokens
 /// * `amount` - Amount to transfer (must be positive)
 ///
-/// # Panics
+/// # Errors
 ///
-/// - If `amount` is not positive
-/// - If sender has insufficient balance before transfer
-/// - If sender balance delta does not equal `amount` (fee-on-transfer detection)
-/// - If recipient balance delta does not equal `amount` (malicious token detection)
-/// - If balance underflow occurs during delta calculation
+/// Emits typed [`EscrowError`] codes if `amount` is not positive, sender balance is insufficient,
+/// balance deltas do not equal `amount`, or balance delta calculation underflows.
 ///
 /// # Security Considerations
 ///
 /// This function assumes the token contract follows standard SEP-41 semantics without
 /// fee-on-transfer, rebasing, or hook behaviors. Non-compliant tokens will cause this
-/// function to panic, serving as a safety boundary. Such tokens should be excluded through
-/// governance allowlists and integration review processes.
+/// function to fail with a typed error, serving as a safety boundary. Such tokens should be
+/// excluded through governance allowlists and integration review processes.
 pub fn transfer_funding_token_with_balance_checks(
     env: &Env,
     token_addr: &Address,
@@ -112,13 +110,14 @@ pub fn transfer_funding_token_with_balance_checks(
     treasury: &Address,
     amount: i128,
 ) {
-    assert!(amount > 0, "transfer amount must be positive");
+    ensure(env, amount > 0, EscrowError::TransferAmountNotPositive);
     let token = TokenClient::new(env, token_addr);
     let from_before = token.balance(from);
     let treasury_before = token.balance(treasury);
-    assert!(
+    ensure(
+        env,
         from_before >= amount,
-        "insufficient token balance before transfer"
+        EscrowError::InsufficientTokenBalanceBeforeTransfer,
     );
 
     token.transfer(from, MuxedAddress::from(treasury.clone()), &amount);
@@ -128,17 +127,19 @@ pub fn transfer_funding_token_with_balance_checks(
 
     let spent = from_before
         .checked_sub(from_after)
-        .expect("balance underflow on sender");
+        .unwrap_or_else(|| fail(env, EscrowError::SenderBalanceUnderflow));
     let received = treasury_after
         .checked_sub(treasury_before)
-        .expect("balance underflow on recipient");
+        .unwrap_or_else(|| fail(env, EscrowError::RecipientBalanceUnderflow));
 
-    assert_eq!(
-        spent, amount,
-        "sender balance delta must equal transfer amount (check fee-on-transfer / malicious token)"
+    ensure(
+        env,
+        spent == amount,
+        EscrowError::SenderBalanceDeltaMismatch,
     );
-    assert_eq!(
-        received, amount,
-        "recipient balance delta must equal transfer amount (check fee-on-transfer / malicious token)"
+    ensure(
+        env,
+        received == amount,
+        EscrowError::RecipientBalanceDeltaMismatch,
     );
 }
