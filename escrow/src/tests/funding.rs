@@ -3263,3 +3263,70 @@ fn test_fund_batch_preserves_event_semantics() {
     // Each event corresponds to a fund operation
     // (Detailed event field verification depends on EscrowFunded structure)
 }
+
+#[test]
+fn test_remaining_funding_capacity() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    let investor = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    // 1. Uninitialized state should panic
+    let uninitialized_client = deploy(&env);
+    let uninitialized_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        uninitialized_client.get_remaining_funding_capacity();
+    }));
+    assert!(uninitialized_res.is_err(), "uninitialized capacity check should panic");
+
+    // 2. Initialized state (zero funded)
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CAPTEST"),
+        &sme,
+        &TARGET,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert_eq!(client.get_remaining_funding_capacity(), TARGET);
+
+    // 3. Partially funded state
+    client.fund(&investor, &(TARGET / 4));
+    assert_eq!(client.get_remaining_funding_capacity(), TARGET - (TARGET / 4));
+
+    // 4. Exactly funded state
+    client.fund(&investor, &(3 * TARGET / 4));
+    assert_eq!(client.get_remaining_funding_capacity(), 0);
+
+    // 5. Overfunded state
+    let overfund_client = deploy(&env);
+    overfund_client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CAPTEST2"),
+        &sme,
+        &1_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    overfund_client.fund(&investor, &1_500i128);
+    assert_eq!(overfund_client.get_remaining_funding_capacity(), 0);
+}
+

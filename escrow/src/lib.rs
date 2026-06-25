@@ -365,7 +365,7 @@ pub enum EscrowError {
     NoPendingAdmin = 163,
     /// The contract's funding-token balance is less than `funded_amount` at withdraw time.
     /// Funds must be custodied in this contract before the SME can pull them.
-    InsufficientContractBalance = 164,
+    InsufficientContractBalance = 165,
 }
 
 #[inline(always)]
@@ -1322,6 +1322,29 @@ impl LiquifactEscrow {
             .instance()
             .get(&DataKey::Escrow)
             .unwrap_or_else(|| fail(&env, EscrowError::EscrowNotInitialized))
+    }
+
+    /// Returns the remaining funding capacity before the funding target is reached.
+    ///
+    /// The remaining capacity is calculated as `funding_target - funded_amount`.
+    /// If the escrow is over-funded (i.e., `funded_amount > funding_target`), the return value
+    /// is clamped to `0` via `saturating_sub` to ensure it never goes negative.
+    ///
+    /// This view is informational only. The `fund` method may still accept deposits
+    /// that over-fund past the target as long as the escrow status is `0` (Open).
+    ///
+    /// # Errors
+    /// Panics with [`EscrowError::EscrowNotInitialized`] if the escrow has not been initialized.
+    ///
+    /// # Complexity
+    /// - Time Complexity: O(1) read from storage.
+    /// - Space Complexity: O(1) in-memory logic.
+    pub fn get_remaining_funding_capacity(env: Env) -> i128 {
+        let escrow = Self::get_escrow(env);
+        escrow
+            .funding_target
+            .saturating_sub(escrow.funded_amount)
+            .max(0)
     }
 
     /// Rotate the beneficiary (SME) address that receives liquidity on
