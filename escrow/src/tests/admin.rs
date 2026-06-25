@@ -427,15 +427,10 @@ fn test_migrate_below_schema_version_matching_stored_raises_no_path() {
 
     let older = SCHEMA_VERSION - 1;
     env.as_contract(&client.address, || {
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &older);
+        env.storage().instance().set(&DataKey::Version, &older);
     });
 
-    assert_contract_error(
-        client.try_migrate(&older),
-        EscrowError::NoMigrationPath,
-    );
+    assert_contract_error(client.try_migrate(&older), EscrowError::NoMigrationPath);
     assert_eq!(
         client.get_version(),
         older,
@@ -455,9 +450,7 @@ fn test_migrate_all_historical_versions_raise_no_path() {
         let (client, admin, sme) = setup(&env);
         default_init(&client, &env, &admin, &sme);
         env.as_contract(&client.address, || {
-            env.storage()
-                .instance()
-                .set(&DataKey::Version, &historical);
+            env.storage().instance().set(&DataKey::Version, &historical);
         });
 
         assert_contract_error(
@@ -477,10 +470,7 @@ fn test_migrate_from_zero_uninitialized_raises_no_path() {
     env.mock_all_auths();
     let client = deploy(&env);
 
-    assert_contract_error(
-        client.try_migrate(&0u32),
-        EscrowError::NoMigrationPath,
-    );
+    assert_contract_error(client.try_migrate(&0u32), EscrowError::NoMigrationPath);
 
     let stored_after: u32 = env.as_contract(&client.address, || {
         env.storage().instance().get(&DataKey::Version).unwrap_or(0)
@@ -515,9 +505,7 @@ fn test_migrate_version_immutable_across_all_error_branches() {
             default_init(&client, &env, &admin, &sme);
             if stored != SCHEMA_VERSION {
                 env.as_contract(&client.address, || {
-                    env.storage()
-                        .instance()
-                        .set(&DataKey::Version, &stored);
+                    env.storage().instance().set(&DataKey::Version, &stored);
                 });
             }
         }
@@ -526,7 +514,10 @@ fn test_migrate_version_immutable_across_all_error_branches() {
         assert_contract_error(result, expected);
 
         let actual_stored: u32 = env.as_contract(&client.address, || {
-            env.storage().instance().get(&DataKey::Version).unwrap_or(stored)
+            env.storage()
+                .instance()
+                .get(&DataKey::Version)
+                .unwrap_or(stored)
         });
         assert_eq!(
             actual_stored, stored,

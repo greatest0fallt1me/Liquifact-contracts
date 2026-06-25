@@ -2,7 +2,7 @@ use super::super::external_calls::transfer_funding_token_with_balance_checks;
 use super::*;
 use crate::{CollateralRecordedEvt, DataKey, InvoiceEscrow, LegalHoldChanged};
 use soroban_sdk::{
-    contract, contractimpl, vec, token::StellarAssetClient, IntoVal, Map, MuxedAddress, Symbol,
+    contract, contractimpl, token::StellarAssetClient, vec, IntoVal, Map, MuxedAddress, Symbol,
     TryFromVal, Val,
 };
 
@@ -1151,9 +1151,8 @@ fn test_get_token_balance_fails_when_not_initialized() {
     let env = Env::default();
     let client = deploy(&env);
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.get_token_balance()
-    }));
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| client.get_token_balance()));
     assert!(
         result.is_err(),
         "get_token_balance must fail when funding token not set"
@@ -1355,7 +1354,10 @@ fn test_get_token_balance_reconciliation_with_distributed_principal() {
     // Initial: balance = funded + dust, outstanding = funded, excess = dust
     let balance = client.get_token_balance();
     let outstanding_initial = funded_amount - distributed_initial;
-    assert_eq!(outstanding_initial, target, "Outstanding = funded before refunds");
+    assert_eq!(
+        outstanding_initial, target,
+        "Outstanding = funded before refunds"
+    );
     assert_eq!(balance, target + dust, "Contract holds funded + surplus");
 
     // Refund investor1 (half) - reduce liability but leave some balance
@@ -1367,13 +1369,20 @@ fn test_get_token_balance_reconciliation_with_distributed_principal() {
 
     assert_eq!(distributed_mid, half, "Distributed principal = half funded");
     assert_eq!(outstanding_mid, half, "Outstanding reduced to half");
-    assert_eq!(balance_mid, half + dust, "Balance = remaining liability + dust");
+    assert_eq!(
+        balance_mid,
+        half + dust,
+        "Balance = remaining liability + dust"
+    );
 
     // Sweep exactly the dust (excess above liability floor)
     client.sweep_terminal_dust(&dust);
 
     let balance_final = client.get_token_balance();
-    assert_eq!(balance_final, outstanding_mid, "Balance = outstanding after dust sweep");
+    assert_eq!(
+        balance_final, outstanding_mid,
+        "Balance = outstanding after dust sweep"
+    );
 
     // Verify: balance - outstanding == 0 (no excess dust remains)
     assert_eq!(
