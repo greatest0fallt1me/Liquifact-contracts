@@ -3263,3 +3263,100 @@ fn test_fund_batch_preserves_event_semantics() {
     // Each event corresponds to a fund operation
     // (Detailed event field verification depends on EscrowFunded structure)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests for InvestorIndex and Pagination (Issue #376)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_investor_index_population() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let inv_a = Address::generate(&env);
+    let inv_b = Address::generate(&env);
+
+    // Fund from investor A
+    client.fund(&inv_a, &10_000i128);
+    // Index should have A
+    let investors = client.get_investors(&0, &10);
+    assert_eq!(investors.len(), 1);
+    assert_eq!(investors.get(0).unwrap(), inv_a);
+
+    // Fund from investor B
+    client.fund(&inv_b, &20_000i128);
+    // Index should have A and B
+    let investors = client.get_investors(&0, &10);
+    assert_eq!(investors.len(), 2);
+    assert_eq!(investors.get(0).unwrap(), inv_a);
+    assert_eq!(investors.get(1).unwrap(), inv_b);
+
+    // Repeat fund from investor A
+    client.fund(&inv_a, &5_000i128);
+    // Index should still only have A and B, no duplicate
+    let investors = client.get_investors(&0, &10);
+    assert_eq!(investors.len(), 2);
+}
+
+#[test]
+fn test_get_investors_pagination() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    // Add 5 distinct investors
+    let mut expected_investors = std::vec::Vec::new();
+    for _ in 0..5 {
+        let inv = Address::generate(&env);
+        expected_investors.push(inv.clone());
+        client.fund(&inv, &1_000i128);
+    }
+
+    // Paginate start=0, limit=2
+    let page1 = client.get_investors(&0, &2);
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.get(0).unwrap(), expected_investors[0]);
+    assert_eq!(page1.get(1).unwrap(), expected_investors[1]);
+
+    // Paginate start=2, limit=2
+    let page2 = client.get_investors(&2, &2);
+    assert_eq!(page2.len(), 2);
+    assert_eq!(page2.get(0).unwrap(), expected_investors[2]);
+    assert_eq!(page2.get(1).unwrap(), expected_investors[3]);
+
+    // Paginate start=4, limit=2 (only 1 left)
+    let page3 = client.get_investors(&4, &2);
+    assert_eq!(page3.len(), 1);
+    assert_eq!(page3.get(0).unwrap(), expected_investors[4]);
+
+    // Paginate start=5, limit=2 (out of bounds)
+    let page4 = client.get_investors(&5, &2);
+    assert_eq!(page4.len(), 0);
+
+    // Paginate with limit 0
+    let page_zero = client.get_investors(&0, &0);
+    assert_eq!(page_zero.len(), 0);
+
+    // Add 52 distinct investors to test capped limit of 50
+    let env2 = Env::default();
+    let (client2, admin2, sme2) = setup(&env2);
+    default_init(&client2, &env2, &admin2, &sme2);
+    for _ in 0..52 {
+        client2.fund(&Address::generate(&env2), &1_000i128);
+    }
+    let max_page = client2.get_investors(&0, &100);
+    assert_eq!(max_page.len(), 50);
+}
+
+#[test]
+fn test_get_investors_legacy_compatibility() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    // No investors have funded yet (InvestorIndex absent)
+    let investors = client.get_investors(&0, &10);
+    assert_eq!(investors.len(), 0);
+}
+
