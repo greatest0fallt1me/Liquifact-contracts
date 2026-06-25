@@ -3000,6 +3000,10 @@ impl LiquifactEscrow {
     /// Runs the same precondition checks as `fund_impl` (the shared funding engine)
     /// in the exact same order, but returns a numeric code instead of panicking.
     ///
+    /// Note: the preview path intentionally mirrors the public `fund`/`fund_with_commitment`
+    /// behaviors, including the fact that a second commitment-style deposit is rejected
+    /// by the shared funding engine with [`EscrowError::TieredSecondDeposit`].
+    ///
     /// # Return value
     ///
     /// | Code | Meaning |

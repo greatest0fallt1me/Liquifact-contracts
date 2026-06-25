@@ -2,6 +2,40 @@ use super::*;
 use proptest::prelude::*;
 use std::collections::BTreeSet;
 
+fn init_funded_escrow_with_real_token<'a>(
+    env: &'a Env,
+    client: &LiquifactEscrowClient<'a>,
+    admin: &Address,
+    sme: &Address,
+    investor: &Address,
+    target: i128,
+    invoice_id: &str,
+) -> Address {
+    let token = install_stellar_asset_token(env);
+    client.init(
+        admin,
+        &soroban_sdk::String::from_str(env, invoice_id),
+        sme,
+        &target,
+        &800i64,
+        &0u64,
+        &token.id,
+        &None,
+        &Address::generate(env),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    client.fund(investor, &target);
+    let escrow_id = client.address.clone();
+    token.stellar.mint(&escrow_id, &target);
+    escrow_id
+}
+
 proptest! {
     #[test]
     fn prop_funded_amount_non_decreasing(
@@ -218,8 +252,12 @@ proptest! {
             let before_status = client.get_escrow().status;
 
             let after = if use_commitment {
-                // For first-deposit commitment invariants, lock can be 0.
-                client.fund_with_commitment(&inv, &amt, &lock)
+                // First deposit may use commitment semantics; later deposits must use plain fund().
+                if expected_contribs[ix] == 0 {
+                    client.fund_with_commitment(&inv, &amt, &lock)
+                } else {
+                    client.fund(&inv, &amt)
+                }
             } else {
                 client.fund(&inv, &amt)
             };
@@ -393,6 +431,7 @@ fn prop_status_withdraw_transition() {
     let client = deploy(&env);
 
     let target: i128 = 100_000_000_000i128;
+    let token = install_stellar_asset_token(&env);
     client.init(
         &admin,
         &soroban_sdk::String::from_str(&env, "STW1"),
@@ -400,7 +439,7 @@ fn prop_status_withdraw_transition() {
         &target,
         &800i64,
         &0u64,
-        &Address::generate(&env),
+        &token.id,
         &None,
         &Address::generate(&env),
         &None,
@@ -412,6 +451,7 @@ fn prop_status_withdraw_transition() {
     );
 
     client.fund(&investor, &target);
+    token.stellar.mint(&client.address.clone(), &target);
 
     let before_withdraw = client.get_escrow();
     assert_eq!(
@@ -473,6 +513,7 @@ fn prop_no_regression_after_withdraw() {
     let client = deploy(&env);
 
     let target: i128 = 100_000_000_000i128;
+    let token = install_stellar_asset_token(&env);
     client.init(
         &admin,
         &soroban_sdk::String::from_str(&env, "NREG2"),
@@ -480,7 +521,7 @@ fn prop_no_regression_after_withdraw() {
         &target,
         &800i64,
         &0u64,
-        &Address::generate(&env),
+        &token.id,
         &None,
         &Address::generate(&env),
         &None,
@@ -492,6 +533,7 @@ fn prop_no_regression_after_withdraw() {
     );
 
     client.fund(&investor, &target);
+    token.stellar.mint(&client.address.clone(), &target);
     let withdrawn = client.withdraw();
 
     assert_eq!(withdrawn.status, 3, "withdraw must set status to 3");
@@ -545,6 +587,7 @@ fn prop_withdrawn_is_terminal_for_withdraw() {
     let client = deploy(&env);
 
     let target: i128 = 100_000_000_000i128;
+    let token = install_stellar_asset_token(&env);
     client.init(
         &admin,
         &soroban_sdk::String::from_str(&env, "TERM2"),
@@ -552,7 +595,7 @@ fn prop_withdrawn_is_terminal_for_withdraw() {
         &target,
         &800i64,
         &0u64,
-        &Address::generate(&env),
+        &token.id,
         &None,
         &Address::generate(&env),
         &None,
@@ -564,6 +607,7 @@ fn prop_withdrawn_is_terminal_for_withdraw() {
     );
 
     client.fund(&investor, &target);
+    token.stellar.mint(&client.address.clone(), &target);
     client.withdraw();
 
     let withdrawn = client.get_escrow();
