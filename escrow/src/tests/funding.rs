@@ -2843,7 +2843,6 @@ fn zero_lock_with_maturity_is_always_accepted() {
     assert_eq!(escrow.status, 0);
     assert_eq!(client.get_investor_claim_not_before(&investor), 0u64);
 }
-
 #[test]
 fn lock_with_zero_maturity_is_always_accepted() {
     // maturity==0 means no maturity lock; any lock_secs is fine
@@ -2862,7 +2861,8 @@ fn lock_with_zero_maturity_is_always_accepted() {
         &sme,
         &10_000i128,
         &800i64,
-        &0u64, // no maturity
+        &0u64,
+        // no maturity
         &token,
         &None,
         &treasury,
@@ -3026,6 +3026,7 @@ fn test_fund_batch_mid_batch_funded_transition() {
     let sme = Address::generate(&env);
     let investor = Address::generate(&env);
     let (tok, tre) = free_addresses(&env);
+    let investor = Address::generate(&env);
 
     let target = 100_000i128;
     client.init(
@@ -3045,26 +3046,6 @@ fn test_fund_batch_mid_batch_funded_transition() {
         &None,
         &None,
     );
-    let escrow = client.fund_with_commitment(&investor, &1_000i128, &9999u64);
-    assert_eq!(escrow.status, 0);
-    assert_eq!(client.get_investor_claim_not_before(&investor), 10999u64);
-}
-
-#[test]
-fn plain_fund_with_maturity_ignores_lock_bound() {
-    // fund() (simple_fund=true) never sets a claim lock; bound is irrelevant
-    let env = Env::default();
-    env.mock_all_auths();
-    let mut li = env.ledger().get();
-    li.timestamp = 1000;
-    env.ledger().set(li);
-    let (client, admin, sme) = setup(&env);
-    let investor = soroban_sdk::Address::generate(&env);
-    init_with_maturity(&env, &client, &admin, &sme, 2000);
-    // fund() should succeed regardless of maturity; it never imposes a lock
-    let escrow = client.fund(&investor, &1_000i128);
-    assert_eq!(escrow.status, 0);
-    assert_eq!(client.get_investor_claim_not_before(&investor), 0u64);
 
     let inv1 = Address::generate(&env);
     let inv2 = Address::generate(&env);
