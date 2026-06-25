@@ -326,3 +326,107 @@ fn test_revoke_does_not_affect_primary_hash() {
     client.revoke_attestation_digest(&0);
     assert_eq!(client.get_primary_attestation_hash(), Some(primary));
 }
+
+// ---------------------------------------------------------------------------
+// Typed-error assertions (try_ variants)
+// ---------------------------------------------------------------------------
+
+/// `try_bind_primary_attestation_hash` on a second call returns typed error code 50
+/// (`PrimaryAttestationAlreadyBound`), not a panic string.
+#[test]
+fn test_bind_primary_hash_typed_error() {
+    let env = Env::default();
+    let (client, _) = setup_with_init(&env);
+    let d = digest(&env, 0x01);
+    client.bind_primary_attestation_hash(&d);
+    assert_contract_error(
+        client.try_bind_primary_attestation_hash(&d),
+        EscrowError::PrimaryAttestationAlreadyBound,
+    );
+}
+
+/// `try_append_attestation_digest` on the 33rd call returns typed error code 51
+/// (`AttestationAppendLogCapacityReached`), not a panic string.
+#[test]
+fn test_append_beyond_max_typed_error() {
+    let env = Env::default();
+    let (client, _) = setup_with_init(&env);
+    for i in 0u8..MAX_ATTESTATION_APPEND_ENTRIES as u8 {
+        client.append_attestation_digest(&digest(&env, i));
+    }
+    assert_contract_error(
+        client.try_append_attestation_digest(&digest(&env, 0xFF)),
+        EscrowError::AttestationAppendLogCapacityReached,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Event-emission assertions
+// ---------------------------------------------------------------------------
+
+/// `bind_primary_attestation_hash` emits a `PrimaryAttestationBound` event with
+/// the correct `invoice_id` and `digest` fields.
+#[test]
+fn test_bind_primary_hash_emits_event() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    let (client, _) = setup_with_init(&env);
+    let contract_id = client.address.clone();
+    // Capture invoice_id before the call under test so env.events().all()
+    // reflects only the bind invocation, not a subsequent get_escrow() call.
+    let invoice_id = client.get_escrow().invoice_id;
+    let d = digest(&env, 0xAB);
+    client.bind_primary_attestation_hash(&d);
+
+    assert_eq!(
+        env.events().all().events().last().unwrap().clone(),
+        PrimaryAttestationBound {
+            name: symbol_short!("att_bind"),
+            invoice_id,
+            digest: d,
+        }
+        .to_xdr(&env, &contract_id)
+    );
+}
+
+/// `append_attestation_digest` emits an `AttestationDigestAppended` event with
+/// the correct `index` (0-based insertion position) and `digest` fields.
+#[test]
+fn test_append_emits_event_with_correct_index() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    let (client, _) = setup_with_init(&env);
+    let contract_id = client.address.clone();
+    // Capture invoice_id before the calls under test.
+    let invoice_id = client.get_escrow().invoice_id;
+
+    // First append → index 0.
+    let d0 = digest(&env, 0x10);
+    client.append_attestation_digest(&d0);
+    assert_eq!(
+        env.events().all().events().last().unwrap().clone(),
+        AttestationDigestAppended {
+            name: symbol_short!("att_app"),
+            invoice_id: invoice_id.clone(),
+            index: 0,
+            digest: d0,
+        }
+        .to_xdr(&env, &contract_id)
+    );
+
+    // Second append → index 1.
+    let d1 = digest(&env, 0x11);
+    client.append_attestation_digest(&d1);
+    assert_eq!(
+        env.events().all().events().last().unwrap().clone(),
+        AttestationDigestAppended {
+            name: symbol_short!("att_app"),
+            invoice_id,
+            index: 1,
+            digest: d1,
+        }
+        .to_xdr(&env, &contract_id)
+    );
+}

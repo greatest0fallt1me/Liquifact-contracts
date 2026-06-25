@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{CollateralCommitmentSnapshot, DataKey, EscrowCloseSnapshot, EscrowError, YieldTier};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Events, Ledger},
     Address, BytesN, Env, Error, InvokeError, Vec as SorobanVec,
 };
 
@@ -1617,7 +1617,7 @@ fn test_claim_not_before_getter() {
         &sme,
         &100,
         &10,
-        &10,
+        &0, // maturity=0: no maturity lock, so commitment lock has no upper bound
         &token,
         &None,
         &treasury,
