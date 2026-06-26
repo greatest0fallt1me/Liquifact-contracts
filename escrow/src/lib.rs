@@ -207,6 +207,9 @@ pub const MAX_FUND_BATCH: u32 = 50;
 /// Caps blast radius if instrumentation mis-estimates “dust”; tune per asset decimals off-chain.
 pub const MAX_DUST_SWEEP_AMOUNT: i128 = 100_000_000;
 
+/// Upper bound on [`LiquifactEscrow::set_investors_allowlisted`] entries to keep storage bounded.
+pub const MAX_INVESTOR_ALLOWLIST_BATCH: u32 = 32;
+
 /// Maximum UTF-8 byte length for the invoice `String` at init (matches Soroban [`Symbol`] max).
 pub const MAX_INVOICE_ID_STRING_LEN: u32 = 32;
 
@@ -584,6 +587,10 @@ pub enum DataKey {
     AllowlistActive,
     /// Whether a specific address is permitted to fund when [`DataKey::AllowlistActive`] is true.
     InvestorAllowlisted(Address),
+    /// Index of allowlisted addresses for paginated enumeration.
+    /// Updated atomically with each `set_investor_allowlisted` / `set_investors_allowlisted` call.
+    /// Revoked addresses are removed so enumeration always reflects live state.
+    AllowlistIndex,
     /// Set to `true` once an investor's principal has been refunded in a cancelled escrow.
     /// Absent ⇒ `false`. Written once; prevents double-refund.
     InvestorRefunded(Address),
@@ -2634,9 +2641,39 @@ impl LiquifactEscrow {
     /// - [`docs/escrow-allowlist.md`](../docs/escrow-allowlist.md) — full allowlist model documentation
     pub fn set_investor_allowlisted(env: Env, investor: Address, allowed: bool) {
         let escrow = Self::load_escrow_require_admin(&env);
+
+        let was_allowlisted: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvestorAllowlisted(investor.clone()))
+            .unwrap_or(false);
+
         env.storage()
             .persistent()
             .set(&DataKey::InvestorAllowlisted(investor.clone()), &allowed);
+
+        // Maintain the allowlist index
+        let mut index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AllowlistIndex)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if allowed && !was_allowlisted {
+            index.push_back(investor.clone());
+        } else if !allowed && was_allowlisted {
+            // Remove from index by position
+            for i in 0..index.len() {
+                if index.get(i).unwrap() == investor {
+                    index.remove(i);
+                    break;
+                }
+            }
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AllowlistIndex, &index);
 
         InvestorAllowlistChanged {
             name: symbol_short!("al_set"),
@@ -2691,12 +2728,36 @@ impl LiquifactEscrow {
             EscrowError::InvestorBatchTooLarge,
         );
 
-        // Iterate and perform per-address persistent storage write and event emission.
+        // Load index once for the entire batch
+        let mut index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AllowlistIndex)
+            .unwrap_or_else(|| Vec::new(&env));
+
         for i in 0..n {
             let inv = investors.get(i).unwrap();
+
+            let was_allowlisted: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::InvestorAllowlisted(inv.clone()))
+                .unwrap_or(false);
+
             env.storage()
                 .persistent()
                 .set(&DataKey::InvestorAllowlisted(inv.clone()), &allowed);
+
+            if allowed && !was_allowlisted {
+                index.push_back(inv.clone());
+            } else if !allowed && was_allowlisted {
+                for j in 0..index.len() {
+                    if index.get(j).unwrap() == inv {
+                        index.remove(j);
+                        break;
+                    }
+                }
+            }
 
             InvestorAllowlistChanged {
                 name: symbol_short!("al_set"),
@@ -2706,6 +2767,10 @@ impl LiquifactEscrow {
             }
             .publish(&env);
         }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AllowlistIndex, &index);
 
         // Emit exactly one batch-level summary event so indexers can distinguish a
         // batch call from N individual `set_investor_allowlisted` calls.
@@ -2742,6 +2807,74 @@ impl LiquifactEscrow {
             .persistent()
             .get(&DataKey::InvestorAllowlisted(investor))
             .unwrap_or(false)
+    }
+
+    /// Returns a paginated list of allowlisted investor addresses.
+    ///
+    /// Reads the allowlist index and filters by live `InvestorAllowlisted` status
+    /// so revoked addresses never appear in the result.
+    ///
+    /// # Arguments
+    /// * `start` - The starting index (0-based) of the pagination.
+    /// * `limit` - The maximum number of addresses to return (capped at a hard limit of 50).
+    ///
+    /// # Returns
+    /// A `Vec<Address>` containing the allowlisted addresses within the requested page.
+    pub fn get_allowlisted_investors(env: Env, start: u32, limit: u32) -> Vec<Address> {
+        let index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AllowlistIndex)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let len = index.len();
+        if start >= len || limit == 0 {
+            return Vec::new(&env);
+        }
+
+        let actual_limit = limit.min(50);
+        let end = (start + actual_limit).min(len);
+
+        let mut result = Vec::new(&env);
+        for i in start..end {
+            let addr = index.get(i).unwrap();
+            // Only include addresses that are still allowlisted
+            let is_al: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::InvestorAllowlisted(addr.clone()))
+                .unwrap_or(false);
+            if is_al {
+                result.push_back(addr);
+            }
+        }
+        result
+    }
+
+    /// Returns the total number of currently-allowlisted addresses.
+    ///
+    /// Reads the allowlist index and counts entries where the live
+    /// `InvestorAllowlisted` flag is still `true`.
+    pub fn get_allowlisted_investors_count(env: Env) -> u32 {
+        let index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AllowlistIndex)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let mut count: u32 = 0;
+        for i in 0..index.len() {
+            let addr = index.get(i).unwrap();
+            let is_al: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::InvestorAllowlisted(addr.clone()))
+                .unwrap_or(false);
+            if is_al {
+                count += 1;
+            }
+        }
+        count
     }
 
     /// Convenience alias for [`LiquifactEscrow::set_legal_hold`] with `active = false`.
