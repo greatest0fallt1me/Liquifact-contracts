@@ -183,7 +183,7 @@ liquifact-contracts/
 | `cancel_pending_admin` | Admin withdraws an unaccepted proposal; clears `DataKey::PendingAdmin`. |
 | `get_escrow` | Read current escrow state. |
 | `get_version` | Read stored `DataKey::Version`. |
-
+| `get_remaining_investor_slots` | Read remaining unique investor capacity before reaching the cap. |
 
 ---
 
