@@ -33,7 +33,6 @@ proptest! {
             &None,
             &None,
             &None,
-            &None,
         );
 
         let before = client.get_escrow().funded_amount;
@@ -70,7 +69,6 @@ proptest! {
             &Address::generate(&env),
             &None,
             &Address::generate(&env),
-            &None,
             &None,
             &None,
             &None,

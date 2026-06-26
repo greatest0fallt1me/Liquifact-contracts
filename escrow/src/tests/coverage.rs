@@ -1,10 +1,10 @@
 use super::{
     free_addresses, install_stellar_asset_token, setup, MAX_ATTESTATION_APPEND_ENTRIES,
-    SCHEMA_VERSION,
+    MAX_CLAIM_BATCH, SCHEMA_VERSION,
 };
 use crate::{CollateralCommitmentSnapshot, DataKey, EscrowCloseSnapshot, EscrowError, YieldTier};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Events, Ledger},
     Address, BytesN, Env, Error, InvokeError, Vec as SorobanVec,
 };
 
@@ -201,10 +201,12 @@ fn escrow_error_discriminants_match_canonical_table() {
         (EscrowError::LegalHoldBlocksBeneficiaryRotation, 160),
         (EscrowError::RotationNotOpen, 161),
         (EscrowError::NewSmeSameAsCurrent, 162),
-        (EscrowError::FundingDeadlinePassed, 164),
+        (EscrowError::FundingDeadlinePassed, 167),
         (EscrowError::NoPendingAdmin, 163),
+        (EscrowError::ClaimBatchEmpty, 165),
+        (EscrowError::ClaimBatchTooLarge, 166),
     ];
-    assert_eq!(TABLE.len(), 84);
+    assert_eq!(TABLE.len(), 86);
     for (variant, code) in TABLE {
         assert_eq!(*variant as u32, *code, "discriminant drift for code {code}");
     }
@@ -2707,5 +2709,224 @@ fn test_is_settleable_after_partial_settle_with_maturity() {
     assert!(
         !client.is_settleable(),
         "settled escrow must not be settleable"
+    );
+}
+
+// ── claim_payouts_batch tests ────────────────────────────────────────────────
+
+/// Helper: init an escrow with a real token, fund N investors, settle, and
+/// return the client + investors vec.
+fn setup_settled_batch(
+    env: &Env,
+    n: usize,
+) -> (crate::LiquifactEscrowClient<'_>, SorobanVec<Address>) {
+    env.mock_all_auths();
+    let token = install_stellar_asset_token(env);
+    let sac = soroban_sdk::token::StellarAssetClient::new(env, &token.id);
+    let admin = Address::generate(env);
+    let sme = Address::generate(env);
+    let treasury = Address::generate(env);
+
+    let client = super::deploy(env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(env, "BATCH"),
+        &sme,
+        &(n as i128 * 100),
+        &0i64,
+        &0u64,
+        &token.id,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    let mut investors = SorobanVec::new(env);
+    for _ in 0..n {
+        let inv = Address::generate(env);
+        sac.mint(&client.address, &100);
+        client.fund(&inv, &100);
+        investors.push_back(inv);
+    }
+
+    env.ledger().with_mut(|li| li.timestamp = 200);
+    client.settle();
+    (client, investors)
+}
+
+#[test]
+fn claim_payouts_batch_equals_n_single_claims() {
+    let env = Env::default();
+    let (client, investors) = setup_settled_batch(&env, 3);
+
+    client.claim_payouts_batch(&investors);
+
+    // Every investor should now be marked claimed.
+    for i in 0..investors.len() {
+        let inv = investors.get(i).unwrap();
+        assert!(client.is_investor_claimed(&inv));
+    }
+}
+
+#[test]
+fn claim_payouts_batch_skips_already_claimed() {
+    let env = Env::default();
+    let (client, investors) = setup_settled_batch(&env, 2);
+
+    // Claim the first investor individually.
+    let first = investors.get(0).unwrap();
+    client.claim_investor_payout(&first);
+
+    // Batch claim both — second claim for first must be a silent no-op.
+    client.claim_payouts_batch(&investors);
+
+    assert!(client.is_investor_claimed(&investors.get(0).unwrap()));
+    assert!(client.is_investor_claimed(&investors.get(1).unwrap()));
+}
+
+#[test]
+fn claim_payouts_batch_rejects_empty() {
+    let env = Env::default();
+    let (client, _) = setup_settled_batch(&env, 1);
+
+    let empty: SorobanVec<Address> = SorobanVec::new(&env);
+    assert_contract_error(
+        client.try_claim_payouts_batch(&empty),
+        EscrowError::ClaimBatchEmpty,
+    );
+}
+
+#[test]
+fn claim_payouts_batch_rejects_oversized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (funding_token, treasury) = free_addresses(&env);
+    let (client, admin, sme) = setup(&env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "OVR"),
+        &sme,
+        &((MAX_CLAIM_BATCH as i128 + 1) * 10),
+        &0i64,
+        &0u64,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    let mut oversized: SorobanVec<Address> = SorobanVec::new(&env);
+    for _ in 0..=(MAX_CLAIM_BATCH) {
+        oversized.push_back(Address::generate(&env));
+    }
+
+    assert_contract_error(
+        client.try_claim_payouts_batch(&oversized),
+        EscrowError::ClaimBatchTooLarge,
+    );
+}
+
+#[test]
+fn claim_payouts_batch_rejects_legal_hold() {
+    let env = Env::default();
+    let (client, investors) = setup_settled_batch(&env, 1);
+    client.set_legal_hold(&true);
+
+    assert_contract_error(
+        client.try_claim_payouts_batch(&investors),
+        EscrowError::LegalHoldBlocksInvestorClaims,
+    );
+}
+
+#[test]
+fn claim_payouts_batch_rejects_not_settled() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (funding_token, treasury) = free_addresses(&env);
+    let (client, admin, sme) = setup(&env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "NS"),
+        &sme,
+        &100,
+        &0i64,
+        &0u64,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    let investor = Address::generate(&env);
+    client.fund(&investor, &10);
+
+    let mut batch: SorobanVec<Address> = SorobanVec::new(&env);
+    batch.push_back(investor);
+
+    assert_contract_error(
+        client.try_claim_payouts_batch(&batch),
+        EscrowError::InvestorClaimNotSettled,
+    );
+}
+
+#[test]
+fn claim_payouts_batch_rejects_locked_investor() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token = install_stellar_asset_token(&env);
+    let sac = soroban_sdk::token::StellarAssetClient::new(&env, &token.id);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    let client = super::deploy(&env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "LOCK"),
+        &sme,
+        &100,
+        &0i64,
+        &0u64,
+        &token.id,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    let investor = Address::generate(&env);
+    sac.mint(&client.address, &100);
+    // Fund with a long lock — 3600s from timestamp=12345.
+    client.fund_with_commitment(&investor, &100, &3600);
+
+    // Settle at t=200 (before lock expires).
+    env.ledger().with_mut(|li| li.timestamp = 200);
+    client.settle();
+
+    let mut batch: SorobanVec<Address> = SorobanVec::new(&env);
+    batch.push_back(investor);
+
+    assert_contract_error(
+        client.try_claim_payouts_batch(&batch),
+        EscrowError::InvestorCommitmentLockNotExpired,
     );
 }
