@@ -954,3 +954,223 @@ fn test_batch_produces_same_per_investor_events_as_individual_calls() {
         ]
     );
 }
+
+// ---------------------------------------------------------------------------
+// Allowlist enumeration tests (Issue #467)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_allowlisted_investors_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.len(), 0);
+
+    let count = client.get_allowlisted_investors_count();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_get_allowlisted_investors_single_page() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    let c = Address::generate(&env);
+
+    client.set_investor_allowlisted(&a, &true);
+    client.set_investor_allowlisted(&b, &true);
+    client.set_investor_allowlisted(&c, &true);
+
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.len(), 3);
+    assert_eq!(result.get(0).unwrap(), a);
+    assert_eq!(result.get(1).unwrap(), b);
+    assert_eq!(result.get(2).unwrap(), c);
+
+    let count = client.get_allowlisted_investors_count();
+    assert_eq!(count, 3);
+}
+
+#[test]
+fn test_get_allowlisted_investors_multi_page() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let mut addrs = SorobanVec::new(&env);
+    for _ in 0..25 {
+        let addr = Address::generate(&env);
+        addrs.push_back(addr);
+    }
+    client.set_investors_allowlisted(&addrs, &true);
+
+    // First page: 10 items
+    let page0 = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(page0.len(), 10);
+    assert_eq!(page0.get(0).unwrap(), addrs.get(0).unwrap());
+    assert_eq!(page0.get(9).unwrap(), addrs.get(9).unwrap());
+
+    // Second page: 10 items
+    let page1 = client.get_allowlisted_investors(&10u32, &10u32);
+    assert_eq!(page1.len(), 10);
+    assert_eq!(page1.get(0).unwrap(), addrs.get(10).unwrap());
+    assert_eq!(page1.get(9).unwrap(), addrs.get(19).unwrap());
+
+    // Third page: remaining 5
+    let page2 = client.get_allowlisted_investors(&20u32, &10u32);
+    assert_eq!(page2.len(), 5);
+    assert_eq!(page2.get(0).unwrap(), addrs.get(20).unwrap());
+    assert_eq!(page2.get(4).unwrap(), addrs.get(24).unwrap());
+
+    let count = client.get_allowlisted_investors_count();
+    assert_eq!(count, 25);
+
+    // Out-of-range start returns empty
+    let empty = client.get_allowlisted_investors(&25u32, &10u32);
+    assert_eq!(empty.len(), 0);
+
+    // Zero limit returns empty
+    let empty = client.get_allowlisted_investors(&0u32, &0u32);
+    assert_eq!(empty.len(), 0);
+}
+
+#[test]
+fn test_get_allowlisted_investors_after_revoke() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    let c = Address::generate(&env);
+
+    client.set_investor_allowlisted(&a, &true);
+    client.set_investor_allowlisted(&b, &true);
+    client.set_investor_allowlisted(&c, &true);
+
+    assert_eq!(client.get_allowlisted_investors_count(), 3);
+
+    // Revoke b
+    client.set_investor_allowlisted(&b, &false);
+
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.len(), 2);
+    assert_eq!(result.get(0).unwrap(), a);
+    assert_eq!(result.get(1).unwrap(), c);
+
+    assert_eq!(client.get_allowlisted_investors_count(), 2);
+
+    // Revoke a
+    client.set_investor_allowlisted(&a, &false);
+    assert_eq!(client.get_allowlisted_investors_count(), 1);
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.get(0).unwrap(), c);
+
+    // Revoke c
+    client.set_investor_allowlisted(&c, &false);
+    assert_eq!(client.get_allowlisted_investors_count(), 0);
+}
+
+#[test]
+fn test_get_allowlisted_investors_revoked_then_relisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let a = Address::generate(&env);
+    client.set_investor_allowlisted(&a, &true);
+    assert_eq!(client.get_allowlisted_investors_count(), 1);
+
+    client.set_investor_allowlisted(&a, &false);
+    assert_eq!(client.get_allowlisted_investors_count(), 0);
+
+    // Re-list
+    client.set_investor_allowlisted(&a, &true);
+    assert_eq!(client.get_allowlisted_investors_count(), 1);
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.get(0).unwrap(), a);
+}
+
+#[test]
+fn test_get_allowlisted_investors_oversized_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let mut addrs = SorobanVec::new(&env);
+    for _ in 0..60 {
+        addrs.push_back(Address::generate(&env));
+    }
+    client.set_investors_allowlisted(&addrs, &true);
+
+    // Even with limit > 50, should only return 50
+    let result = client.get_allowlisted_investors(&0u32, &100u32);
+    assert_eq!(result.len(), 50);
+
+    let count = client.get_allowlisted_investors_count();
+    assert_eq!(count, 60);
+}
+
+#[test]
+fn test_get_allowlisted_investors_batch_add() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    let c = Address::generate(&env);
+
+    let mut v: SorobanVec<Address> = SorobanVec::new(&env);
+    v.push_back(a.clone());
+    v.push_back(b.clone());
+    v.push_back(c.clone());
+    client.set_investors_allowlisted(&v, &true);
+
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.len(), 3);
+    assert_eq!(result.get(0).unwrap(), a);
+    assert_eq!(result.get(1).unwrap(), b);
+    assert_eq!(result.get(2).unwrap(), c);
+
+    // Batch revoke b and c
+    let mut revoke_v: SorobanVec<Address> = SorobanVec::new(&env);
+    revoke_v.push_back(b.clone());
+    revoke_v.push_back(c.clone());
+    client.set_investors_allowlisted(&revoke_v, &false);
+
+    let result = client.get_allowlisted_investors(&0u32, &10u32);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.get(0).unwrap(), a);
+}
+
+#[test]
+fn test_get_allowlisted_investors_start_past_end() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    init(&env, &client);
+
+    let a = Address::generate(&env);
+    client.set_investor_allowlisted(&a, &true);
+
+    // start == len returns empty
+    let result = client.get_allowlisted_investors(&1u32, &10u32);
+    assert_eq!(result.len(), 0);
+
+    // start > len returns empty
+    let result = client.get_allowlisted_investors(&5u32, &10u32);
+    assert_eq!(result.len(), 0);
+}
