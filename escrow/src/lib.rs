@@ -1386,6 +1386,14 @@ impl LiquifactEscrow {
         .publish(&env);
     }
 
+    /// Admin-only: clear the off-chain registry hint.
+    ///
+    /// Convenience wrapper around `rebind_registry_ref` with `None`.
+    /// Emits the same `RegistryRefRebound` event with `registry = None`.
+    pub fn clear_registry_ref(env: Env) {
+        Self::rebind_registry_ref(env, None);
+    }
+
 
     /// Returns the optional pending admin address waiting for [`LiquifactEscrow::accept_admin`],
     /// or [`None`] when no admin handover is in progress.
