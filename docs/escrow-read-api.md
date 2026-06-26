@@ -38,6 +38,9 @@ re-implementing storage reads to guarantee identical semantics.
 - [has_maturity_lock](#has_maturity_lock--bool)
 - [get_funding_close_snapshot](#get_funding_close_snapshot--optionfundingclosesnapshot)
 
+**Tier Lookup:**
+- [preview_yield_tier](#preview_yield_tieramount-i128-lock-u64--i64-u64)
+
 **Per-Investor State:**
 - [get_contribution](#get_contributioninvestor-address--i128)
 - [get_unique_funder_count](#get_unique_funder_count--u32)
@@ -452,6 +455,39 @@ without re-implementing the `unwrap_or` fallback themselves.
 
 `get_investor_yield_bps` returns the same value; prefer `get_effective_yield_bps` when the intent is
 "the rate `compute_investor_payout` will actually apply."
+
+---
+
+## Tier Lookup
+
+### `preview_yield_tier(amount: i128, lock: u64) → (i64, u64)`
+
+**Signature:** `pub fn preview_yield_tier(env: Env, amount: i128, lock: u64) -> (i64, u64)`
+
+Pure read — no auth, no storage writes, safe for simulation.
+
+Returns `(effective_yield_bps, matched_lock_secs)` for a hypothetical first deposit of `amount`
+with `lock` seconds of commitment, using the **exact same tier-selection rule** applied by
+`fund_with_commitment`. This lets a prospective investor see which tier they would receive before
+depositing, without re-implementing the selection logic.
+
+The `amount` parameter mirrors the `fund_with_commitment` signature. In the current release, tier
+selection is lock-only; `amount` is accepted for API parity and forward-compatibility.
+
+**Return values:**
+
+| Condition | `effective_yield_bps` | `matched_lock_secs` |
+|---|---|---|
+| No `YieldTierTable` configured | escrow base `yield_bps` | `0` |
+| `lock == 0` | escrow base `yield_bps` | `0` |
+| `lock` below every tier threshold | escrow base `yield_bps` | `0` |
+| `lock >= min_lock_secs` of a tier | highest qualifying tier's `yield_bps` | that tier's `min_lock_secs` |
+
+> **Note:** this preview reflects the rule applied at **first deposit only**. A follow-on
+> `fund` call does not re-select a tier.
+
+**Security note:** the preview is guaranteed to agree with `fund_with_commitment` because it delegates
+to the same internal `effective_yield_for_commitment` helper — there is no separate selection path.
 
 ---
 

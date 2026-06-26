@@ -183,6 +183,7 @@ liquifact-contracts/
 | `cancel_pending_admin` | Admin withdraws an unaccepted proposal; clears `DataKey::PendingAdmin`. |
 | `get_escrow` | Read current escrow state. |
 | `get_version` | Read stored `DataKey::Version`. |
+| `preview_yield_tier` | Pure read: returns `(yield_bps, matched_lock_secs)` a first deposit with `amount` and `lock` seconds would receive, using the exact on-chain tier-selection rule. Safe for simulation; no auth required. |
 
 
 ---

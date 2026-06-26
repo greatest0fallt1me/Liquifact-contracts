@@ -141,10 +141,6 @@ pub const SCHEMA_VERSION: u32 = 6;
 /// Revocation via [`LiquifactEscrow::revoke_attestation_digest`] does not consume a slot.
 pub const MAX_ATTESTATION_APPEND_ENTRIES: u32 = 32;
 
-use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, Address, Env, Symbol,
-};
-
 // ---------------------------------------------------------------------------
 // Data types
 // ---------------------------------------------------------------------------
@@ -1345,73 +1341,6 @@ impl LiquifactEscrow {
         escrow
     }
 
-    /// Get current escrow state.
-    pub fn get_escrow(env: Env) -> InvoiceEscrow {
-        env.storage()
-            .instance()
-            .get(&DataKey::Escrow)
-            .unwrap_or_else(|| panic!("Escrow not initialized"))
-    }
-
-    /// Record investor funding. In production, this would be called with token transfer.
-    pub fn fund(env: Env, _investor: Address, amount: i128) -> InvoiceEscrow {
-        let mut escrow = Self::get_escrow(env.clone());
-        assert!(escrow.status == 0, "Escrow not open for funding");
-        escrow.funded_amount += amount;
-        if escrow.funded_amount >= escrow.funding_target {
-            escrow.status = 1;
-        }
-        env.storage()
-            .instance()
-            .set(&DataKey::MinContributionFloor, &floor);
-
-        env.storage()
-            .instance()
-            .set(&DataKey::UniqueFunderCount, &0u32);
-
-        if let Some(cap) = max_per_investor {
-            ensure(&env, cap > 0, EscrowError::MaxPerInvestorNotPositive);
-            env.storage()
-                .instance()
-                .set(&DataKey::MaxPerInvestorCap, &cap);
-        }
-
-        if let Some(cap) = max_unique_investors {
-            ensure(&env, cap > 0, EscrowError::MaxUniqueInvestorsNotPositive);
-            env.storage()
-                .instance()
-                .set(&DataKey::MaxUniqueInvestorsCap, &cap);
-        }
-
-        let delay = legal_hold_clear_delay.unwrap_or(0);
-        if delay > 0 {
-            env.storage()
-                .instance()
-                .set(&DataKey::LegalHoldClearDelay, &delay);
-        }
-
-        if let Some(active) = allowlist_active {
-            if active {
-                env.storage()
-                    .instance()
-                    .set(&DataKey::AllowlistActive, &true);
-            }
-        }
-
-        EscrowInitialized {
-            name: symbol_short!("escrow_ii"),
-            // Read stored values so event fields match persisted keys (indexer single-event bootstrap).
-            escrow: Self::get_escrow(env.clone()),
-            funding_token: Self::get_funding_token(env.clone()),
-            treasury: Self::get_treasury(env.clone()),
-            registry: Self::get_registry_ref(env.clone()),
-            has_maturity_lock: Self::has_maturity_lock(env.clone()),
-        }
-        .publish(&env);
-
-        escrow
-    }
-
     /// Returns the SEP-41 funding token bound at [`LiquifactEscrow::init`] ([`DataKey::FundingToken`]).
     ///
     /// **Immutable:** set once at init; cannot change after deploy. Emits
@@ -2198,6 +2127,31 @@ impl LiquifactEscrow {
     /// Earliest ledger timestamp for [`LiquifactEscrow::claim_investor_payout`]; `0` if not gated.
     pub fn get_investor_claim_not_before(env: Env, investor: Address) -> u64 {
         Self::get_persistent_investor_claim_not_before(&env, investor)
+    }
+
+    /// Pure read — no auth, no storage writes, safe for simulation.
+    ///
+    /// Returns `(effective_yield_bps, matched_lock_secs)` for a hypothetical contribution of
+    /// `amount` with `lock` seconds, using the **exact same tier-selection rule** applied at
+    /// the first [`LiquifactEscrow::fund_with_commitment`] deposit.
+    ///
+    /// The `amount` parameter is accepted to mirror the `fund_with_commitment` signature and
+    /// enable future amount-based tier selection; it is not used in the current lock-only
+    /// tier-selection rule.
+    ///
+    /// # Resolution
+    ///
+    /// - If no [`DataKey::YieldTierTable`] is configured, or `lock == 0`, returns the escrow base
+    ///   `yield_bps` with `matched_lock_secs = 0` (the no-tier fallback).
+    /// - Otherwise returns the highest-yield tier whose `min_lock_secs <= lock`. If no tier
+    ///   qualifies, returns the base yield with `matched_lock_secs = 0`.
+    ///
+    /// > **Note:** this preview reflects the rule applied at **first deposit only**. A
+    /// > follow-on [`LiquifactEscrow::fund`] call does not re-select a tier.
+    pub fn preview_yield_tier(env: Env, amount: i128, lock: u64) -> (i64, u64) {
+        let _ = amount; // accepted for signature parity with fund_with_commitment; unused in lock-only selection
+        let escrow = Self::get_escrow(env.clone());
+        Self::effective_yield_for_commitment(&env, escrow.yield_bps, lock)
     }
 
     /// Retrieve the currently recorded SME collateral commitment metadata from storage.
