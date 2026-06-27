@@ -1874,3 +1874,58 @@ fn test_error_code_uniqueness() {
         );
     }
 }
+
+/// Verify key-rotation recovery flow:
+/// 1. Old admin sets a legal hold.
+/// 2. Old admin initiates handover to new admin.
+/// 3. New admin accepts handover.
+/// 4. Old admin is locked out and cannot clear the hold.
+/// 5. New admin clears the hold successfully.
+#[test]
+fn test_post_handover_admin_can_clear_hold_set_by_old_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, old_admin, sme) = setup(&env);
+    let new_admin = Address::generate(&env);
+    default_init(&client, &env, &old_admin, &sme);
+
+    // 1. Old admin sets a legal hold
+    client.set_legal_hold(&true);
+    assert!(client.get_legal_hold());
+
+    // 2. Old admin proposes new admin
+    client.propose_admin(&new_admin, &None);
+
+    // 3. New admin accepts admin handover
+    client.accept_admin();
+    assert_eq!(client.get_escrow().admin, new_admin);
+
+    // 4. Old admin tries to clear the hold (should fail/panic because old admin is locked out/no longer admin)
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &old_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "clear_legal_hold",
+            args: soroban_sdk::Vec::<soroban_sdk::Val>::new(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.clear_legal_hold();
+    }))
+    .is_err());
+
+    // 5. New admin clears the hold successfully
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &new_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "clear_legal_hold",
+            args: soroban_sdk::Vec::<soroban_sdk::Val>::new(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.clear_legal_hold();
+    assert!(!client.get_legal_hold());
+}
+
