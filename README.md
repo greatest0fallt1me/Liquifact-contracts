@@ -152,41 +152,35 @@ liquifact-contracts/
 
 ### Escrow contract entrypoints
 
-| Entrypoint | Auth | Description |
+| Entrypoint | Auth Role | Description |
 |---|---|---|
-| `init` | — | Create an invoice escrow (invoice id, SME, amount, yield bps, maturity). |
-| `get_escrow` | — | Read current escrow state. |
-| `fund` | — | Record investor funding; status → funded when target is met. |
-| `settle` | — | Mark escrow as settled; investors receive principal + yield. |
-| `record_sme_collateral_commitment` | SME | Record off-chain collateral pledge (metadata only, no token movement). |
+| `init` | Admin (implicit) | Create an invoice escrow (invoice id, SME, amount, yield bps, maturity). |
+| `fund` | Investor | Record investor principal and atomically pull the funding token from the investor; marks escrow funded when target is met. |
+| `fund_with_commitment` | Investor | First deposit with optional lock period (atomically pulling the funding token); selects tiered yield. |
+| `settle` | SME | Mark a funded escrow as settled (SME auth required; maturity enforced). |
+| `partial_settle` | SME | SME marks a portion of the escrow as settled before full settlement. |
+| `withdraw` | SME | SME pulls funded liquidity (accounting record). |
+| `cancel_funding` | Admin | Admin cancels an open escrow (transitions status 0 → 4). |
+| `refund` | Investor | Investor pulls contributed liquidity from a cancelled escrow. Increments `DistributedPrincipal` liability. |
+| `claim_investor_payout` | Investor | Investor records a payout claim after settlement. |
+| `claim_payouts_batch` | Investor / Any | Batch-record payout claims for up to `MAX_CLAIM_BATCH` investors in one transaction. |
+| `sweep_terminal_dust` | Treasury | Treasury sweeps rounding residue from a terminal escrow. |
+| `migrate` | Admin | Schema version gate — **typed errors on all paths** in the current release (codes 90–92). |
+| `set_legal_hold` | Admin | Admin activates/clears compliance hold. |
+| `set_allowlist_active` | Admin | Admin enables/disables the investor allowlist gate. |
+| `set_investor_allowlisted` | Admin | Admin sets per-address allowlist status. |
+| `set_investors_allowlisted` | Admin | Admin batch-sets allowlist status for multiple addresses. |
+| `bind_primary_attestation_hash` | Admin | Admin sets a single-write 32-byte digest (single-set guarantee). |
+| `append_attestation_digest` | Admin | Admin appends to bounded audit log. |
+| `record_sme_collateral_commitment` | SME | SME records collateral pledge (metadata only). |
 | `get_sme_collateral_commitment` | — | Return current pledge record, or `None`. |
 | `clear_sme_collateral_commitment` | SME | Retire a recorded pledge; emits `CollateralClearedEvt`. Returns `NoCollateralToClear` if none exists. |
-
-| Entrypoint | Description |
-|------------|-------------|
-| `init` | Create an invoice escrow; binds funding token, treasury, optional registry. |
-| `fund` | Record investor principal and atomically pull the funding token from the investor; marks escrow funded when target is met. |
-| `fund_with_commitment` | First deposit with optional lock period (atomically pulling the funding token); selects tiered yield. |
-| `settle` | Mark a funded escrow as settled (SME auth required; maturity enforced). |
-| `withdraw` | SME pulls funded liquidity (accounting record). |
-| `refund` | Investor pulls contributed liquidity from a cancelled escrow. Increments `DistributedPrincipal` liability. |
-| `claim_investor_payout` | Investor records a payout claim after settlement. |
-| `claim_payouts_batch` | Batch-record payout claims for up to `MAX_CLAIM_BATCH` investors in one transaction. |
-| `sweep_terminal_dust` | Treasury sweeps rounding residue from a terminal escrow. |
-| `migrate` | Schema version gate — **typed errors on all paths** in the current release (codes 90–92). |
-| `set_legal_hold` | Admin activates/clears compliance hold. |
-| `set_allowlist_active` | Admin enables/disables the investor allowlist gate. |
-| `set_investor_allowlisted` | Admin sets per-address allowlist status. |
-| `set_investors_allowlisted` | Admin batch-sets allowlist status for multiple addresses. |
-| `bind_primary_attestation_hash` | Admin sets a single-write 32-byte digest (single-set guarantee). |
-| `append_attestation_digest` | Admin appends to bounded audit log. |
-| `record_sme_collateral_commitment` | SME records collateral pledge (metadata only). |
-| `propose_admin` | Step 1 of admin handover — sets `DataKey::PendingAdmin` and `DataKey::PendingAdminExpiry` (admin auth). Optional validity window; defaults to 7 days. |
-| `accept_admin` | Step 2 of admin handover — pending address accepts before expiry and becomes admin. |
-| `cancel_pending_admin` | Admin withdraws an unaccepted proposal; clears `DataKey::PendingAdmin` and `DataKey::PendingAdminExpiry`. |
-| `get_escrow` | Read current escrow state. |
-| `get_version` | Read stored `DataKey::Version`. |
-| `get_remaining_investor_slots` | Read remaining unique investor capacity before reaching the cap. |
+| `propose_admin` | Admin | Step 1 of admin handover — sets `PendingAdmin` and proposal expiry. |
+| `accept_admin` | Pending Admin | Step 2 of admin handover — pending address accepts proposal before expiry. |
+| `cancel_pending_admin` | Admin | Admin withdraws an unaccepted proposal. |
+| `get_escrow` | — | Read current escrow state. |
+| `get_version` | — | Read stored `DataKey::Version`. |
+| `get_remaining_investor_slots` | — | Read remaining unique investor capacity before reaching the cap. |
 
 ---
 
@@ -230,7 +224,7 @@ Core design decisions are captured in [`docs/adr/`](docs/adr/):
 
 | ADR | Decision |
 |-----|---------|
-| [ADR-001](docs/adr/ADR-001-state-model.md) | Escrow state model (`status` 0–3, forward-only transitions) |
+| [ADR-001](docs/adr/ADR-001-state-model.md) | Escrow state model (`status` 0–4, forward-only transitions) |
 | [ADR-002](docs/adr/ADR-002-auth-boundaries.md) | Authorization boundaries per role (admin, SME, investor, treasury) |
 | [ADR-003](docs/adr/ADR-003-settlement-flow.md) | Two-phase settlement flow and funding-close snapshot |
 | [ADR-004](docs/adr/ADR-004-legal-hold.md) | Legal / compliance hold mechanism |

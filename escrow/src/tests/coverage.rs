@@ -3454,3 +3454,199 @@ fn test_collateral_same_timestamp_replacement_is_allowed() {
         200i128
     );
 }
+
+#[test]
+fn test_state_machine_illegal_transitions_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    let (funding_token, treasury) = free_addresses(&env);
+    
+    // Status 0: Open
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "SM_TEST"),
+        &sme,
+        &10_000i128,
+        &500i64,
+        &0u64,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None
+    );
+
+    let investor = Address::generate(&env);
+
+    // 1. In Status 0 (Open):
+    // - try_settle() should fail with SettlementNotFunded
+    assert_contract_error(
+        client.try_settle(),
+        EscrowError::SettlementNotFunded,
+    );
+    // - try_withdraw() should fail with WithdrawalNotFunded
+    assert_contract_error(
+        client.try_withdraw(),
+        EscrowError::WithdrawalNotFunded,
+    );
+    // - try_refund() should fail with RefundNotCancelled
+    assert_contract_error(
+        client.try_refund(&investor),
+        EscrowError::RefundNotCancelled,
+    );
+
+    // Now, transition to Status 1 (Funded) by funding to target
+    client.fund(&investor, &10_000i128);
+    assert_eq!(client.get_escrow().status, 1);
+
+    // 2. In Status 1 (Funded):
+    // - try_refund() should fail with RefundNotCancelled
+    assert_contract_error(
+        client.try_refund(&investor),
+        EscrowError::RefundNotCancelled,
+    );
+    // - try_cancel_funding() should fail with CancelFundingNotOpen
+    assert_contract_error(
+        client.try_cancel_funding(),
+        EscrowError::CancelFundingNotOpen,
+    );
+    
+    // Create another escrow instance to test Status 4 (Cancelled)
+    let (client2, admin2, sme2) = setup(&env);
+    client2.init(
+        &admin2,
+        &soroban_sdk::String::from_str(&env, "SM_TEST2"),
+        &sme2,
+        &10_000i128,
+        &500i64,
+        &0u64,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None
+    );
+
+    // 3. Cancel client2 to reach Status 4 (Cancelled)
+    client2.cancel_funding();
+    assert_eq!(client2.get_escrow().status, 4);
+
+    // In Status 4 (Cancelled):
+    // - try_settle() should fail with SettlementNotFunded
+    assert_contract_error(
+        client2.try_settle(),
+        EscrowError::SettlementNotFunded,
+    );
+    // - try_withdraw() should fail with WithdrawalNotFunded
+    assert_contract_error(
+        client2.try_withdraw(),
+        EscrowError::WithdrawalNotFunded,
+    );
+    // - try_cancel_funding() should fail with CancelFundingNotOpen
+    assert_contract_error(
+        client2.try_cancel_funding(),
+        EscrowError::CancelFundingNotOpen,
+    );
+    // - try_fund() should fail with EscrowNotOpenForFunding
+    assert_contract_error(
+        client2.try_fund(&investor, &100i128),
+        EscrowError::EscrowNotOpenForFunding,
+    );
+
+    // 4. Transition client (currently Status 1) to Status 2 (Settled)
+    client.settle();
+    assert_eq!(client.get_escrow().status, 2);
+
+    // In Status 2 (Settled):
+    // - try_settle() should fail with SettlementNotFunded
+    assert_contract_error(
+        client.try_settle(),
+        EscrowError::SettlementNotFunded,
+    );
+    // - try_withdraw() should fail with WithdrawalNotFunded
+    assert_contract_error(
+        client.try_withdraw(),
+        EscrowError::WithdrawalNotFunded,
+    );
+    // - try_cancel_funding() should fail with CancelFundingNotOpen
+    assert_contract_error(
+        client.try_cancel_funding(),
+        EscrowError::CancelFundingNotOpen,
+    );
+    // - try_refund() should fail with RefundNotCancelled
+    assert_contract_error(
+        client.try_refund(&investor),
+        EscrowError::RefundNotCancelled,
+    );
+    // - try_fund() should fail with EscrowNotOpenForFunding
+    assert_contract_error(
+        client.try_fund(&investor, &100i128),
+        EscrowError::EscrowNotOpenForFunding,
+    );
+
+    // Create client3, fund it, and withdraw to reach Status 3 (Withdrawn)
+    let (client3, admin3, sme3) = setup(&env);
+    client3.init(
+        &admin3,
+        &soroban_sdk::String::from_str(&env, "SM_TEST3"),
+        &sme3,
+        &10_000i128,
+        &500i64,
+        &0u64,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None
+    );
+    client3.fund(&investor, &10_000i128);
+    client3.withdraw();
+    assert_eq!(client3.get_escrow().status, 3);
+
+    // In Status 3 (Withdrawn):
+    // - try_settle() should fail with SettlementNotFunded
+    assert_contract_error(
+        client3.try_settle(),
+        EscrowError::SettlementNotFunded,
+    );
+    // - try_withdraw() should fail with WithdrawalNotFunded
+    assert_contract_error(
+        client3.try_withdraw(),
+        EscrowError::WithdrawalNotFunded,
+    );
+    // - try_cancel_funding() should fail with CancelFundingNotOpen
+    assert_contract_error(
+        client3.try_cancel_funding(),
+        EscrowError::CancelFundingNotOpen,
+    );
+    // - try_refund() should fail with RefundNotCancelled
+    assert_contract_error(
+        client3.try_refund(&investor),
+        EscrowError::RefundNotCancelled,
+    );
+    // - try_fund() should fail with EscrowNotOpenForFunding
+    assert_contract_error(
+        client3.try_fund(&investor, &100i128),
+        EscrowError::EscrowNotOpenForFunding,
+    );
+}
+
