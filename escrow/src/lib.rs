@@ -417,8 +417,6 @@ pub enum EscrowError {
     MaturityInPast = 166,
     /// The maturity timestamp exceeds the configured maximum horizon from the current ledger time.
     MaturityExceedsMaxHorizon = 167,
-    /// `unrevoke_attestation_digest` was called on an index that is not currently revoked.
-    AttestationNotRevoked = 168,
     /// `clear_sme_collateral_commitment` was called when no commitment pledge exists.
     NoCollateralToClear = 169,
     /// The computed investor payout is zero; nothing to transfer.
@@ -2133,12 +2131,8 @@ impl LiquifactEscrow {
         Self::get_persistent_investor_claimed(&env, investor)
     }
 
-    /// Returns `true` when [`LiquifactEscrow::settle`] would succeed for the current ledger state.
-    ///
-    /// Specifically: escrow status must be `1` (funded), no legal hold must be active,
-    /// and the configured maturity (if non-zero) must have been reached.
-    pub fn is_settleable(env: Env) -> bool {
-        if Self::legal_hold_active(&env) {
+    fn settleable_now(env: &Env) -> bool {
+        if Self::legal_hold_active(env) {
             return false;
         }
         let escrow = Self::get_escrow(env.clone());
@@ -2149,6 +2143,16 @@ impl LiquifactEscrow {
             return false;
         }
         true
+    }
+
+    /// Returns `true` when [`LiquifactEscrow::settle`] would succeed for the current ledger state.
+    ///
+    /// Settlement requires:
+    /// - escrow funded
+    /// - maturity reached
+    /// - no active legal hold
+    pub fn is_settleable(env: Env) -> bool {
+        Self::settleable_now(&env)
     }
 
     /// Record or replace the optional SME collateral commitment metadata.
