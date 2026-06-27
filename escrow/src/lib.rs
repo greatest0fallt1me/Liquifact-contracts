@@ -425,6 +425,7 @@ pub enum EscrowError {
     PayoutZero = 170,
     /// `update_funding_deadline` was called on a non-open escrow (status != 0).
     FundingDeadlineUpdateNotOpen = 171,
+    PartialSettleUnauthorizedCaller = 200,
 }
 
 #[inline(always)]
@@ -1973,13 +1974,8 @@ impl LiquifactEscrow {
             .instance()
             .get(&DataKey::AttestationAppendLog)
             .unwrap_or_else(|| Vec::new(&env));
-        assert!(index < log.len(), "attestation index out of range");
-        assert!(
-            !env.storage()
-                .instance()
-                .has(&DataKey::AttestationRevoked(index)),
-            "attestation already revoked at index"
-        );
+        ensure(&env, index < log.len(), EscrowError::AttestationIndexOutOfRange);
+        ensure(&env, !env.storage().instance().has(&DataKey::AttestationRevoked(index)), EscrowError::AttestationAlreadyRevoked);
 
         env.storage()
             .instance()
@@ -2525,14 +2521,11 @@ impl LiquifactEscrow {
         let escrow = Self::get_escrow(env.clone());
         escrow.admin.require_auth();
 
-        let clearable_at: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::LegalHoldClearableAt)
-            .expect("No pending clear request");
+        ensure(&env, env.storage().instance().has(&DataKey::LegalHoldClearableAt), EscrowError::LegalHoldClearRequestMissing);
+        let clearable_at: u64 = env.storage().instance().get(&DataKey::LegalHoldClearableAt).unwrap();
 
         let now = env.ledger().timestamp();
-        assert!(now >= clearable_at, "Timelock not yet expired");
+        ensure(&env, now >= clearable_at, EscrowError::LegalHoldClearNotReady);
 
         env.storage()
             .instance()
@@ -2559,10 +2552,7 @@ impl LiquifactEscrow {
         let escrow = Self::get_escrow(env.clone());
         escrow.admin.require_auth();
 
-        assert!(
-            !env.storage().instance().has(&DataKey::LegalHoldClearableAt),
-            "Clear request already pending"
-        );
+        ensure(&env, !env.storage().instance().has(&DataKey::LegalHoldClearableAt), EscrowError::LegalHoldClearRequestMissing);
 
         let now = env.ledger().timestamp();
         let clearable_at = now
@@ -2588,10 +2578,7 @@ impl LiquifactEscrow {
         let escrow = Self::get_escrow(env.clone());
         escrow.admin.require_auth();
 
-        assert!(
-            env.storage().instance().has(&DataKey::LegalHoldClearableAt),
-            "No pending clear request to cancel"
-        );
+        ensure(&env, env.storage().instance().has(&DataKey::LegalHoldClearableAt), EscrowError::LegalHoldClearRequestMissing);
 
         env.storage()
             .instance()
@@ -3122,22 +3109,13 @@ impl LiquifactEscrow {
     pub fn partial_settle(env: Env, caller: Address) -> InvoiceEscrow {
         caller.require_auth();
 
-        assert!(
-            !Self::legal_hold_active(&env),
-            "Legal hold blocks partial settlement"
-        );
+        ensure(&env, !Self::legal_hold_active(&env), EscrowError::LegalHoldBlocksSettlement);
 
         let mut escrow = Self::get_escrow(env.clone());
 
-        assert!(
-            caller == escrow.sme_address || caller == escrow.admin,
-            "Unauthorized caller for partial settlement"
-        );
+        ensure(&env, caller == escrow.sme_address || caller == escrow.admin, EscrowError::PartialSettleUnauthorizedCaller);
 
-        assert!(
-            escrow.status == 0,
-            "Escrow must be in Open state for partial settlement"
-        );
+        ensure(&env, escrow.status == 0, EscrowError::EscrowNotOpenForFunding);
 
         // Transition to funded status early.
         escrow.status = 1;
