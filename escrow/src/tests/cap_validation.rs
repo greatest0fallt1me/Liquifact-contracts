@@ -1603,3 +1603,184 @@ fn test_lower_floor_unconfigured_succeeds_if_positive() {
     }))
     .is_err());
 }
+
+#[test]
+fn test_raise_accepted_and_allows_extra_investors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    // Init with cap 2
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_TEST"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(2u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    // First two investors succeed
+    let inv1 = Address::generate(&env);
+    let inv2 = Address::generate(&env);
+    client.fund(&inv1, &30_000_000_000i128);
+    client.fund(&inv2, &30_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 2);
+
+    // Raise cap to 4
+    client.raise_max_unique_investors(&4u32);
+
+    // Add two more investors
+    let inv3 = Address::generate(&env);
+    let inv4 = Address::generate(&env);
+    client.fund(&inv3, &20_000_000_000i128);
+    client.fund(&inv4, &20_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 4);
+    assert_eq!(client.get_escrow().status, 1); // funded
+}
+
+#[test]
+#[should_panic]
+fn test_raise_equal_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_EQUAL"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    // Attempt raise to same value -> should Err(NewCapNotHigher)
+    client.raise_max_unique_investors(&3u32);
+}
+
+#[test]
+#[should_panic]
+fn test_raise_lower_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_LOWER"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.raise_max_unique_investors(&2u32);
+}
+
+#[test]
+#[should_panic]
+fn test_raise_without_existing_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    // Init without cap (None)
+    client.init(
+        &admin,
+        &String::from_str(&env, "NO_CAP"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.raise_max_unique_investors(&5u32);
+}
+
+#[test]
+#[should_panic]
+fn test_raise_when_closed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    // Init with cap 2 and fully fund to close escrow
+    client.init(
+        &admin,
+        &String::from_str(&env, "CLOSED"),
+        &sme,
+        &200_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(2u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    // Fund two investors reaching target, status becomes funded (1)
+    let inv1 = Address::generate(&env);
+    let inv2 = Address::generate(&env);
+    client.fund(&inv1, &100_000_000_000i128);
+    client.fund(&inv2, &100_000_000_000i128);
+    // Now escrow not open; raise should panic
+    client.raise_max_unique_investors(&4u32);
+}
