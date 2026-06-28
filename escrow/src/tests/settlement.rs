@@ -1936,7 +1936,10 @@ fn test_is_settleable_funded_before_maturity() {
     );
     fund_to_target(&client, &env);
     env.ledger().with_mut(|l| l.timestamp = maturity - 1);
-    assert!(!client.is_settleable(), "funded but before maturity is not settleable");
+    assert!(
+        !client.is_settleable(),
+        "funded but before maturity is not settleable"
+    );
 }
 
 #[test]
@@ -1966,7 +1969,10 @@ fn test_is_settleable_funded_exact_maturity() {
     );
     fund_to_target(&client, &env);
     env.ledger().with_mut(|l| l.timestamp = maturity);
-    assert!(client.is_settleable(), "funded at exact maturity is settleable");
+    assert!(
+        client.is_settleable(),
+        "funded at exact maturity is settleable"
+    );
 }
 
 #[test]
@@ -1996,7 +2002,10 @@ fn test_is_settleable_funded_after_maturity() {
     );
     fund_to_target(&client, &env);
     env.ledger().with_mut(|l| l.timestamp = maturity + 100);
-    assert!(client.is_settleable(), "funded after maturity is settleable");
+    assert!(
+        client.is_settleable(),
+        "funded after maturity is settleable"
+    );
 }
 
 #[test]
@@ -2006,7 +2015,10 @@ fn test_is_settleable_legal_hold_active() {
     default_init(&client, &env, &admin, &sme);
     fund_to_target(&client, &env);
     client.set_legal_hold(&true);
-    assert!(!client.is_settleable(), "legal hold active is not settleable");
+    assert!(
+        !client.is_settleable(),
+        "legal hold active is not settleable"
+    );
 }
 
 #[test]
