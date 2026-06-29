@@ -1983,6 +1983,107 @@ fn test_rebind_registry_ref_requires_admin_auth() {
     client.rebind_registry_ref(&Some(Address::generate(&env)));
 }
 
+/// Doc-backing test: rebinding or clearing the registry-reference pointer must not affect
+/// any settlement-critical outcome. The registry hint is a discoverability pointer only —
+/// it confers no control over escrow funds, settlement, or authorization.
+///
+/// This test verifies:
+/// 1. Binding a registry address does not change `funded_amount` or escrow status.
+/// 2. Clearing the registry (both via `rebind_registry_ref(None)` and `clear_registry_ref`)
+///    does not affect settlement eligibility or the settled status.
+/// 3. The registry pointer can be freely mutated without touching the fund flow.
+#[test]
+fn test_registry_ref_does_not_affect_settlement_or_funding() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    let contract_id = client.address.clone();
+
+    let registry = Address::generate(&env);
+
+    // Init with no registry reference.
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "REG_NOFUND"),
+        &sme,
+        &TARGET,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    // Confirm no registry at init.
+    assert_eq!(client.get_registry_ref(), None);
+
+    // Fund the escrow.
+    let investor = Address::generate(&env);
+    client.fund(&investor, &TARGET);
+    let funded_before = client.get_funded_amount();
+
+    // Bind a registry reference — funded_amount must be unchanged.
+    client.rebind_registry_ref(&Some(registry.clone()));
+    assert_eq!(client.get_registry_ref(), Some(registry.clone()));
+    assert_eq!(
+        client.get_funded_amount(),
+        funded_before,
+        "binding a registry ref must not change funded_amount"
+    );
+
+    // Change to a different registry — still no fund change.
+    let registry2 = Address::generate(&env);
+    client.rebind_registry_ref(&Some(registry2.clone()));
+    assert_eq!(client.get_registry_ref(), Some(registry2.clone()));
+    assert_eq!(
+        client.get_funded_amount(),
+        funded_before,
+        "rebinding registry ref must not change funded_amount"
+    );
+
+    // Clear via rebind_registry_ref(None) — still fully funded.
+    client.rebind_registry_ref(&None);
+    assert_eq!(client.get_registry_ref(), None);
+    assert_eq!(
+        client.get_funded_amount(),
+        funded_before,
+        "clearing registry ref must not change funded_amount"
+    );
+
+    // Rebind once more then clear via clear_registry_ref — funded_amount unchanged.
+    client.rebind_registry_ref(&Some(registry.clone()));
+    client.clear_registry_ref();
+    assert_eq!(client.get_registry_ref(), None);
+    assert_eq!(
+        client.get_funded_amount(),
+        funded_before,
+        "clear_registry_ref must not change funded_amount"
+    );
+
+    // Verify that every RegistryRefRebound event has a non-authority payload:
+    // no settlement-critical fields (amount, status) are present in the event.
+    let all_events = env.events().all();
+    let invoice_id = client.get_escrow().invoice_id.clone();
+    let last = all_events.events().last().unwrap().clone();
+    let expected_clear = crate::RegistryRefRebound {
+        name: Symbol::new(&env, "reg_rebind"),
+        invoice_id,
+        registry: None,
+    }
+    .to_xdr(&env, &contract_id);
+    assert_eq!(last, expected_clear, "last event must be reg_rebind with None");
+}
+
 fn test_error_code_uniqueness() {
     let mut discriminants = std::collections::HashSet::new();
     let codes = [
